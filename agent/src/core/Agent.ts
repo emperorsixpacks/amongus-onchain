@@ -11,6 +11,7 @@ import {
   ActionCommitment,
   DeadBody,
   DiscussionMessage,
+  ActionType,
 } from "../types.js";
 import { GameObserver } from "./GameObserver.js";
 import { ActionSubmitter } from "./ActionSubmitter.js";
@@ -18,6 +19,13 @@ import { GameMemory } from "../memory/GameMemory.js";
 import { IStrategy, StrategyContext } from "../strategies/BaseStrategy.js";
 import { CrewmateStrategy, CrewmateStyle } from "../strategies/CrewmateStrategy.js";
 import { ImpostorStrategy, ImpostorStyle } from "../strategies/ImpostorStrategy.js";
+import { WebSocketClient } from "./WebSocketClient.js";
+
+export interface AgentOptions {
+  crewmateStyle?: CrewmateStyle;
+  impostorStyle?: ImpostorStyle;
+  wsServerUrl?: string;
+}
 
 export class Agent {
   private config: AgentConfig;
@@ -25,21 +33,28 @@ export class Agent {
   private submitter: ActionSubmitter;
   private memory: GameMemory;
   private logger: winston.Logger;
+  private wsClient: WebSocketClient | null = null;
 
   private currentGameId: bigint | null = null;
   private currentGameAddress: Address | null = null;
   private myRole: Role = Role.None;
   private strategy: IStrategy | null = null;
   private pendingCommitment: ActionCommitment | null = null;
+  private lastPhase: GamePhase | null = null;
 
   private crewmateStyle: CrewmateStyle;
   private impostorStyle: ImpostorStyle;
 
   constructor(
     config: AgentConfig,
-    crewmateStyle: CrewmateStyle = "task-focused",
-    impostorStyle: ImpostorStyle = "stealth"
+    options: AgentOptions = {}
   ) {
+    const {
+      crewmateStyle = "task-focused",
+      impostorStyle = "stealth",
+      wsServerUrl,
+    } = options;
+
     this.config = config;
     this.observer = new GameObserver(config.rpcUrl, config.factoryAddress);
     this.submitter = new ActionSubmitter(config.privateKey, config.rpcUrl, config.factoryAddress);
@@ -57,6 +72,38 @@ export class Agent {
       ),
       transports: [new winston.transports.Console()],
     });
+
+    // Initialize WebSocket client if server URL provided
+    if (wsServerUrl) {
+      this.wsClient = new WebSocketClient(
+        {
+          serverUrl: wsServerUrl,
+          agentAddress: this.submitter.address,
+          agentName: config.agentName,
+        },
+        this.logger
+      );
+    }
+  }
+
+  /**
+   * Connect to WebSocket server (call before joining game)
+   */
+  async connectWebSocket(): Promise<void> {
+    if (this.wsClient) {
+      await this.wsClient.connect();
+      this.logger.info("WebSocket connected");
+    }
+  }
+
+  /**
+   * Disconnect from WebSocket server
+   */
+  disconnectWebSocket(): void {
+    if (this.wsClient) {
+      this.wsClient.disconnect();
+      this.logger.info("WebSocket disconnected");
+    }
   }
 
   get address(): Address {
@@ -104,7 +151,7 @@ export class Agent {
     return { gameId: result.gameId, gameAddress: result.gameAddress };
   }
 
-  setGame(gameId: bigint, gameAddress: Address): void {
+  setGame(gameId: bigint, gameAddress: Address, colorId: number = 0): void {
     this.currentGameId = gameId;
     this.currentGameAddress = gameAddress;
     this.observer.setGame(gameAddress, gameId);
@@ -113,7 +160,13 @@ export class Agent {
     this.myRole = Role.None;
     this.strategy = null;
     this.pendingCommitment = null;
+    this.lastPhase = null;
     this.logger.info(`Set active game: ${gameId} at ${gameAddress}`);
+
+    // Join WebSocket game room
+    if (this.wsClient) {
+      this.wsClient.joinGame(gameId, colorId);
+    }
   }
 
   async startGame(): Promise<void> {
@@ -135,8 +188,18 @@ export class Agent {
         const gameState = await this.observer.getGameState();
         this.memory.setCurrentRound(gameState.round);
 
+        // Broadcast phase change via WebSocket
+        if (this.lastPhase !== gameState.phase) {
+          this.broadcastPhaseChange(gameState);
+          this.lastPhase = gameState.phase;
+        }
+
         if (gameState.phase === GamePhase.Ended) {
           this.logger.info(`Game ended! Crewmates won: ${gameState.crewmatesWon}`);
+          // Leave WebSocket game room
+          if (this.wsClient) {
+            this.wsClient.leaveGame();
+          }
           break;
         }
 
@@ -148,6 +211,19 @@ export class Agent {
         this.logger.error(`Error in game loop: ${error}`);
         await this.sleep(2000);
       }
+    }
+  }
+
+  /**
+   * Broadcast phase change to WebSocket server
+   */
+  private broadcastPhaseChange(gameState: GameState): void {
+    if (this.wsClient) {
+      this.wsClient.sendPhaseChange(
+        gameState.phase,
+        gameState.round,
+        gameState.phaseEndTime
+      );
     }
   }
 
@@ -232,13 +308,44 @@ export class Agent {
       return;
     }
 
+    const revealedAction = this.pendingCommitment.action;
+
     // Reveal action
     await this.submitter.revealAction(this.pendingCommitment);
-    this.logger.info(`Revealed action: ${JSON.stringify(this.pendingCommitment.action)}`);
+    this.logger.info(`Revealed action: ${JSON.stringify(revealedAction)}`);
 
     // Update memory
     const myPlayer = await this.observer.getPlayer(this.address);
     this.memory.setMyLocation(myPlayer.location);
+
+    // Send action result to WebSocket server
+    if (this.wsClient) {
+      this.wsClient.sendActionResult(revealedAction, gameState.round);
+
+      // If it was a move, also send position update
+      if (revealedAction.type === ActionType.Move && revealedAction.destination !== undefined) {
+        this.wsClient.sendPositionUpdate(revealedAction.destination, gameState.round);
+      }
+
+      // If it was a kill, notify the server
+      if (revealedAction.type === ActionType.Kill && revealedAction.target) {
+        this.wsClient.sendKill(
+          this.address,
+          revealedAction.target,
+          myPlayer.location,
+          gameState.round
+        );
+      }
+
+      // If it was a task, notify the server
+      if (revealedAction.type === ActionType.DoTask) {
+        this.wsClient.sendTaskComplete(
+          this.address,
+          myPlayer.tasksCompleted,
+          myPlayer.totalTasks
+        );
+      }
+    }
 
     this.pendingCommitment = null;
   }
@@ -297,6 +404,11 @@ export class Agent {
 
     // Submit vote
     await this.submitter.submitVote(voteTarget);
+
+    // Send vote to WebSocket server
+    if (this.wsClient) {
+      this.wsClient.sendVote(this.address, voteTarget, gameState.round);
+    }
   }
 
   // ============ HELPERS ============
