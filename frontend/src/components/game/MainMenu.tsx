@@ -6,9 +6,11 @@ import { AmongUsSprite } from "./AmongUsSprite";
 
 interface MainMenuProps {
   onPlay: () => void;
+  isConnected?: boolean;
+  error?: string | null;
 }
 
-export function MainMenu({ onPlay }: MainMenuProps) {
+export function MainMenu({ onPlay, isConnected, error }: MainMenuProps) {
   return (
     <SpaceBackground>
       <div className="min-h-screen flex flex-col items-center justify-center relative">
@@ -63,20 +65,43 @@ export function MainMenu({ onPlay }: MainMenuProps) {
         </motion.p>
 
         {/* Play button */}
-        <motion.button
-          className="relative px-16 py-4 text-3xl font-bold text-white border-4 border-white bg-transparent hover:bg-white hover:text-black transition-all duration-200"
-          style={{
-            fontFamily: "'Comic Sans MS', cursive",
-          }}
-          onClick={onPlay}
+        <motion.div
+          className="flex flex-col gap-4 items-center"
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ delay: 0.5, type: "spring", damping: 10 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
         >
-          PLAY
-        </motion.button>
+          <motion.button
+            className={`relative px-16 py-4 text-3xl font-bold border-4 transition-all duration-200 ${
+              isConnected
+                ? "text-white border-white bg-transparent hover:bg-white hover:text-black"
+                : "text-gray-500 border-gray-600 bg-transparent cursor-not-allowed"
+            }`}
+            style={{
+              fontFamily: "'Comic Sans MS', cursive",
+            }}
+            onClick={() => isConnected && onPlay()}
+            whileHover={isConnected ? { scale: 1.05 } : {}}
+            whileTap={isConnected ? { scale: 0.95 } : {}}
+            disabled={!isConnected}
+          >
+            PLAY
+          </motion.button>
+
+          {/* Connection status */}
+          <div className="flex items-center gap-2 mt-2">
+            <div className={`w-3 h-3 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+            <span className={`text-sm ${isConnected ? "text-green-400" : "text-red-400"}`}>
+              {isConnected ? "Connected to server" : error || "Connecting to server..."}
+            </span>
+          </div>
+
+          {!isConnected && (
+            <p className="text-gray-500 text-xs text-center mt-2 max-w-sm">
+              Make sure the WebSocket server is running at ws://localhost:8080
+            </p>
+          )}
+        </motion.div>
 
         {/* Floating characters at bottom */}
         <div className="absolute bottom-10 left-0 right-0 flex justify-around">

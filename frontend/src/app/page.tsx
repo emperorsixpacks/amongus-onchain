@@ -1,20 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
   MainMenu,
   SpaceBackground,
   ScrollableMap,
   TaskBar,
-  ActionButtons,
   VotingScreen,
   DeadBodyReportedScreen,
   AmongUsGameEndScreen,
   EjectionScreen,
   AmongUsSprite,
   GameLogPanel,
-  LobbyScreen,
 } from "@/components/game";
 import {
   Player,
@@ -25,481 +23,75 @@ import {
   LocationNames,
   Role,
   PlayerColors,
-  Agent,
-  GameRoom,
-  RoomStatus,
 } from "@/types/game";
-
-// Mock data for demonstration - fresh game start (6 players max)
-// All players spawn in Cafeteria, all alive, no tasks completed yet
-// Roles are hidden (shown as None) until game logic reveals them
-const mockPlayers: Player[] = [
-  {
-    address: "0x1234567890123456789012345678901234567890" as `0x${string}`,
-    colorId: 0, // Red (You)
-    role: Role.Crewmate,
-    location: Location.Cafeteria,
-    isAlive: true,
-    tasksCompleted: 0,
-    totalTasks: 5,
-    hasVoted: false,
-  },
-  {
-    address: "0x2345678901234567890123456789012345678901" as `0x${string}`,
-    colorId: 1, // Blue
-    role: Role.Impostor, // Hidden from other players
-    location: Location.Cafeteria,
-    isAlive: true,
-    tasksCompleted: 0,
-    totalTasks: 5,
-    hasVoted: false,
-  },
-  {
-    address: "0x3456789012345678901234567890123456789012" as `0x${string}`,
-    colorId: 2, // Green
-    role: Role.Crewmate,
-    location: Location.Cafeteria,
-    isAlive: true,
-    tasksCompleted: 0,
-    totalTasks: 5,
-    hasVoted: false,
-  },
-  {
-    address: "0x4567890123456789012345678901234567890123" as `0x${string}`,
-    colorId: 3, // Pink
-    role: Role.Crewmate,
-    location: Location.Cafeteria,
-    isAlive: true,
-    tasksCompleted: 0,
-    totalTasks: 5,
-    hasVoted: false,
-  },
-  {
-    address: "0x5678901234567890123456789012345678901234" as `0x${string}`,
-    colorId: 4, // Orange
-    role: Role.Crewmate,
-    location: Location.Cafeteria,
-    isAlive: true,
-    tasksCompleted: 0,
-    totalTasks: 5,
-    hasVoted: false,
-  },
-  {
-    address: "0x6789012345678901234567890123456789012345" as `0x${string}`,
-    colorId: 8, // Purple
-    role: Role.Crewmate,
-    location: Location.Cafeteria,
-    isAlive: true,
-    tasksCompleted: 0,
-    totalTasks: 5,
-    hasVoted: false,
-  },
-];
-
-// No dead bodies at game start - bodies only appear when impostor kills
-const mockDeadBodies: DeadBody[] = [];
-
-// Initial logs - just game start
-const initialLogs: GameLog[] = [
-  { type: "start", message: "Game started! Find the impostor among 6 players.", timestamp: Date.now() },
-  { type: "join", message: "All players have joined. Roles assigned secretly.", timestamp: Date.now() - 1000 },
-];
-
-// Mock agents for lobby demonstration - 8 agents total
-const mockAgents: Agent[] = [
-  {
-    address: "0x1234567890123456789012345678901234567890" as `0x${string}`,
-    name: "Agent Alpha",
-    balance: BigInt("5000000000000000000"), // 5 MON - highest, can create rooms
-    isRegistered: true,
-    colorId: 0, // Red
-    gamesPlayed: 12,
-    wins: 8,
-  },
-  {
-    address: "0x2345678901234567890123456789012345678901" as `0x${string}`,
-    name: "Agent Beta",
-    balance: BigInt("3500000000000000000"), // 3.5 MON
-    isRegistered: true,
-    colorId: 1, // Blue
-    gamesPlayed: 8,
-    wins: 3,
-  },
-  {
-    address: "0x3456789012345678901234567890123456789012" as `0x${string}`,
-    name: "Agent Gamma",
-    balance: BigInt("2000000000000000000"), // 2 MON
-    isRegistered: true,
-    colorId: 2, // Green
-    gamesPlayed: 15,
-    wins: 7,
-  },
-  {
-    address: "0x4567890123456789012345678901234567890123" as `0x${string}`,
-    name: "Agent Delta",
-    balance: BigInt("1500000000000000000"), // 1.5 MON
-    isRegistered: true,
-    colorId: 3, // Pink
-    gamesPlayed: 5,
-    wins: 2,
-  },
-  {
-    address: "0x5678901234567890123456789012345678901234" as `0x${string}`,
-    name: "Agent Epsilon",
-    balance: BigInt("4000000000000000000"), // 4 MON
-    isRegistered: true,
-    colorId: 4, // Orange
-    gamesPlayed: 20,
-    wins: 12,
-  },
-  {
-    address: "0x6789012345678901234567890123456789012345" as `0x${string}`,
-    name: "Agent Zeta",
-    balance: BigInt("2500000000000000000"), // 2.5 MON
-    isRegistered: true,
-    colorId: 8, // Purple
-    gamesPlayed: 10,
-    wins: 4,
-  },
-  {
-    address: "0x7890123456789012345678901234567890123456" as `0x${string}`,
-    name: "Agent Eta",
-    balance: BigInt("1800000000000000000"), // 1.8 MON
-    isRegistered: true,
-    colorId: 5, // Yellow
-    gamesPlayed: 18,
-    wins: 9,
-  },
-  {
-    address: "0x8901234567890123456789012345678901234567" as `0x${string}`,
-    name: "Agent Theta",
-    balance: BigInt("3000000000000000000"), // 3 MON
-    isRegistered: true,
-    colorId: 10, // Cyan
-    gamesPlayed: 14,
-    wins: 6,
-  },
-];
-
-// Current user is Agent Alpha (has highest balance, can create rooms)
-const currentAgent = mockAgents[0];
-
-// The agent with highest balance can create rooms
-const roomCreator = mockAgents.reduce((highest, agent) =>
-  agent.balance > highest.balance ? agent : highest
-).address;
+import { useGameServer } from "@/hooks/useGameServer";
 
 type GameView = "menu" | "lobby" | "game" | "voting" | "end";
 
 export default function Home() {
   const [view, setView] = useState<GameView>("menu");
-  const [players, setPlayers] = useState<Player[]>(mockPlayers);
-  const [deadBodies, setDeadBodies] = useState<DeadBody[]>(mockDeadBodies);
   const [showBodyReported, setShowBodyReported] = useState(false);
   const [showEjection, setShowEjection] = useState(false);
   const [showGameEnd, setShowGameEnd] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(30);
-  const [tasksCompleted, setTasksCompleted] = useState(16);
   const [ejectedPlayer, setEjectedPlayer] = useState<Player | null>(null);
-  const [logs, setLogs] = useState<GameLog[]>(initialLogs);
   const [gameWon, setGameWon] = useState(true);
   const [spotlightedPlayer, setSpotlightedPlayer] = useState<`0x${string}` | null>(null);
 
-  // Lobby state
-  const [rooms, setRooms] = useState<GameRoom[]>([]);
-  const [roomIdCounter, setRoomIdCounter] = useState(0);
-  const [lobbyLogs, setLobbyLogs] = useState<string[]>(["Initializing agent network..."]);
+  // WebSocket connection - the ONLY source of truth
+  const {
+    isConnected,
+    connectionId,
+    error,
+    rooms,
+    currentRoom,
+    players,
+    deadBodies,
+    logs,
+    phase,
+    tasksCompleted,
+    totalTasks,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    startGame,
+  } = useGameServer();
 
-  // For spectator mode, we pick a random player to "follow"
-  const currentPlayer = players[0]?.address || mockPlayers[0].address;
+  // Current player (first player for spectator view)
+  const currentPlayer = players[0]?.address;
   const currentPlayerData = players.find((p) => p.address === currentPlayer);
 
-  // Autonomous agent behavior in lobby
+  // Handle play button - go to lobby
+  const handlePlay = () => {
+    setView("lobby");
+  };
+
+  // Handle room creation
+  const handleCreateRoom = () => {
+    createRoom(10, 2); // 10 max players, 2 impostors
+  };
+
+  // Handle joining a room
+  const handleJoinRoom = (roomId: string) => {
+    joinRoom(roomId, true); // Join as spectator
+  };
+
+  // Handle game start from lobby
+  const handleStartGame = () => {
+    startGame();
+  };
+
+  // Watch for phase changes from WebSocket
   useEffect(() => {
-    if (view !== "lobby") return;
+    if (phase === GamePhase.ActionCommit && view === "lobby") {
+      setView("game");
+    } else if (phase === GamePhase.Ended && view === "game") {
+      setShowGameEnd(true);
+    }
+  }, [phase, view]);
 
-    const agentActions = async () => {
-      // Step 1: Room creator creates a room after a delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const creatorAgent = mockAgents.find(a => a.address === roomCreator);
-      if (!creatorAgent) return;
-
-      setLobbyLogs(prev => [...prev, `${creatorAgent.name} is creating a room...`]);
-
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const newRoomId = 1;
-      const wagerAmount = BigInt("500000000000000000"); // 0.5 MON
-
-      const newRoom: GameRoom = {
-        roomId: newRoomId,
-        creator: creatorAgent.address,
-        players: [creatorAgent],
-        wagerAmount,
-        maxPlayers: 8, // Max 8 agents per game
-        status: RoomStatus.Open,
-        createdAt: Date.now(),
-      };
-
-      setRooms([newRoom]);
-      setLobbyLogs(prev => [...prev, `Room #${newRoomId} created with 0.50 MON wager (Min: 6, Max: 8)`]);
-
-      // Step 2: Other agents join one by one (7 more to fill the room)
-      const otherAgents = mockAgents.filter(a => a.address !== roomCreator);
-
-      for (let i = 0; i < Math.min(otherAgents.length, 7); i++) {
-        await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
-
-        const joiningAgent = otherAgents[i];
-        setLobbyLogs(prev => [...prev, `${joiningAgent.name} is joining...`]);
-
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        setRooms(prev => prev.map(room => {
-          if (room.roomId === newRoomId && room.status === RoomStatus.Open) {
-            const updatedPlayers = [...room.players, joiningAgent];
-            return {
-              ...room,
-              players: updatedPlayers,
-              status: updatedPlayers.length >= room.maxPlayers ? RoomStatus.Full : RoomStatus.Open,
-            };
-          }
-          return room;
-        }));
-
-        setLobbyLogs(prev => [...prev, `${joiningAgent.name} joined Room #${newRoomId}`]);
-      }
-    };
-
-    agentActions();
-  }, [view]);
-
-  // Simulate autonomous agent behavior (movement, tasks, kills)
-  useEffect(() => {
-    if (view !== "game") return;
-
-    // Room connections for valid movement - matches The Skeld layout
-    // Upper Engine -- MedBay -- Cafeteria
-    //      |                        |
-    //   Reactor                   Admin
-    //      |                        |
-    //   Security                  Storage
-    //      |                        |
-    // Lower Engine -- Electrical ---+
-    const ADJACENT_ROOMS: Record<Location, Location[]> = {
-      [Location.UpperEngine]: [Location.MedBay, Location.Reactor],
-      [Location.MedBay]: [Location.UpperEngine, Location.Cafeteria],
-      [Location.Cafeteria]: [Location.MedBay, Location.Admin],
-      [Location.Reactor]: [Location.UpperEngine, Location.Security],
-      [Location.Admin]: [Location.Cafeteria, Location.Storage],
-      [Location.Security]: [Location.Reactor, Location.LowerEngine],
-      [Location.Storage]: [Location.Admin, Location.Electrical],
-      [Location.LowerEngine]: [Location.Security, Location.Electrical],
-      [Location.Electrical]: [Location.LowerEngine, Location.Storage],
-    };
-
-    // Agent movement - move through corridors (one room at a time)
-    // Slower interval so walking animation has time to complete
-    const moveInterval = setInterval(() => {
-      setPlayers(prev => {
-        const newPlayers = [...prev];
-        // Only 1 agent moves at a time to make it more realistic
-        const aliveAgents = newPlayers.filter(p => p.isAlive);
-
-        if (aliveAgents.length > 0 && Math.random() > 0.4) {
-          const mover = aliveAgents[Math.floor(Math.random() * aliveAgents.length)];
-          const moverIdx = newPlayers.findIndex(p => p.address === mover.address);
-
-          // Get adjacent rooms only
-          const adjacentRooms = ADJACENT_ROOMS[mover.location] || [];
-          if (adjacentRooms.length > 0) {
-            const newLocation = adjacentRooms[Math.floor(Math.random() * adjacentRooms.length)];
-
-            newPlayers[moverIdx] = { ...newPlayers[moverIdx], location: newLocation };
-
-            const playerColor = PlayerColors[mover.colorId].name;
-            setLogs(prevLogs => [...prevLogs, {
-              type: "task" as const,
-              message: `${playerColor} walked to ${LocationNames[newLocation]}`,
-              timestamp: Date.now(),
-            }]);
-          }
-        }
-        return newPlayers;
-      });
-    }, 5000); // Slower - 5 seconds between moves
-
-    // Crewmate task completion
-    const taskInterval = setInterval(() => {
-      setPlayers(prev => {
-        const crewmates = prev.filter(p => p.isAlive && p.role === Role.Crewmate && p.tasksCompleted < p.totalTasks);
-        if (crewmates.length > 0 && Math.random() > 0.5) {
-          const worker = crewmates[Math.floor(Math.random() * crewmates.length)];
-          const playerColor = PlayerColors[worker.colorId].name;
-          setLogs(prevLogs => [...prevLogs, {
-            type: "task" as const,
-            message: `${playerColor} completed a task in ${LocationNames[worker.location]}`,
-            timestamp: Date.now(),
-          }]);
-          setTasksCompleted(t => t + 1);
-          return prev.map(p =>
-            p.address === worker.address ? { ...p, tasksCompleted: p.tasksCompleted + 1 } : p
-          );
-        }
-        return prev;
-      });
-    }, 6000);
-
-    // Impostor kill attempts - smart behavior checking for nearby witnesses
-    const killInterval = setInterval(() => {
-      setPlayers(prev => {
-        const impostor = prev.find(p => p.isAlive && p.role === Role.Impostor);
-        if (!impostor) return prev;
-
-        // Get adjacent rooms to check for potential witnesses
-        const adjacentRooms = ADJACENT_ROOMS[impostor.location] || [];
-
-        // Find crewmates in same location (potential targets)
-        const targets = prev.filter(p =>
-          p.isAlive &&
-          p.role === Role.Crewmate &&
-          p.location === impostor.location
-        );
-
-        // Check for witnesses in the SAME room
-        const witnessesInRoom = prev.filter(p =>
-          p.isAlive &&
-          p.location === impostor.location &&
-          p.address !== impostor.address &&
-          p.role !== Role.Impostor
-        );
-
-        // Check for agents in ADJACENT rooms who might walk in
-        const agentsNearby = prev.filter(p =>
-          p.isAlive &&
-          p.address !== impostor.address &&
-          adjacentRooms.includes(p.location)
-        );
-
-        // Impostor decision logic:
-        // - Must have exactly 1 target (the victim)
-        // - No other witnesses in the room
-        // - Prefer when no agents are in adjacent rooms (lower risk)
-        const isAloneWithTarget = targets.length === 1 && witnessesInRoom.length === 1;
-        const noNearbyThreat = agentsNearby.length === 0;
-        const lowRiskNearby = agentsNearby.length <= 1;
-
-        // Safe kill: alone with target and no one nearby
-        const safeToKill = isAloneWithTarget && noNearbyThreat;
-        // Risky kill: alone with target but someone nearby (might walk in)
-        const riskyKill = isAloneWithTarget && lowRiskNearby && !noNearbyThreat;
-
-        // Decide whether to kill
-        let shouldKill = false;
-        if (safeToKill) {
-          shouldKill = Math.random() > 0.3; // 70% chance when safe
-        } else if (riskyKill) {
-          shouldKill = Math.random() > 0.8; // 20% chance when risky
-        }
-        // If too many nearby, impostor withdraws (no kill attempt)
-
-        if (shouldKill) {
-          const victim = targets[0];
-
-          // Check if this victim already has a dead body (prevent duplicates)
-          setDeadBodies(bodies => {
-            const alreadyDead = bodies.some(b => b.victim === victim.address);
-            if (alreadyDead) return bodies;
-
-            const victimColor = PlayerColors[victim.colorId].name;
-            const impostorColor = PlayerColors[impostor.colorId].name;
-
-            // Log the kill with context
-            if (safeToKill) {
-              setLogs(prevLogs => [...prevLogs, {
-                type: "kill" as const,
-                message: `${victimColor} was eliminated in ${LocationNames[victim.location]}! (No witnesses nearby)`,
-                timestamp: Date.now(),
-              }]);
-            } else {
-              setLogs(prevLogs => [...prevLogs, {
-                type: "kill" as const,
-                message: `${victimColor} was eliminated in ${LocationNames[victim.location]}! (Risky move)`,
-                timestamp: Date.now(),
-              }]);
-            }
-
-            return [...bodies, {
-              victim: victim.address,
-              location: victim.location,
-              round: 1n,
-              reported: false,
-            }];
-          });
-
-          return prev.map(p =>
-            p.address === victim.address ? { ...p, isAlive: false } : p
-          );
-        }
-
-        return prev;
-      });
-    }, 8000); // Check every 8 seconds for kill opportunity
-
-    // Body discovery and reporting
-    const reportInterval = setInterval(() => {
-      // Check if any alive agent is in a room with an unreported body
-      setDeadBodies(prevBodies => {
-        const unreportedBodies = prevBodies.filter(b => !b.reported);
-        if (unreportedBodies.length === 0) return prevBodies;
-
-        // Check each unreported body
-        for (const body of unreportedBodies) {
-          // Find alive agents in the same room as this body
-          const agentsInRoom = players.filter(p =>
-            p.isAlive &&
-            p.location === body.location &&
-            p.address !== body.victim // Not the victim themselves
-          );
-
-          if (agentsInRoom.length > 0 && Math.random() > 0.5) {
-            // An agent discovers and reports the body
-            const reporter = agentsInRoom[Math.floor(Math.random() * agentsInRoom.length)];
-            const reporterColor = PlayerColors[reporter.colorId].name;
-            const victim = players.find(p => p.address === body.victim);
-            const victimColor = victim ? PlayerColors[victim.colorId].name : "Unknown";
-
-            setLogs(prevLogs => [...prevLogs, {
-              type: "report" as const,
-              message: `${reporterColor} reported ${victimColor}'s body in ${LocationNames[body.location]}!`,
-              timestamp: Date.now(),
-            }]);
-
-            // Show the body reported screen
-            setShowBodyReported(true);
-
-            // Mark body as reported
-            return prevBodies.map(b =>
-              b.victim === body.victim ? { ...b, reported: true } : b
-            );
-          }
-        }
-
-        return prevBodies;
-      });
-    }, 4000); // Check for bodies every 4 seconds
-
-    return () => {
-      clearInterval(moveInterval);
-      clearInterval(taskInterval);
-      clearInterval(killInterval);
-      clearInterval(reportInterval);
-    };
-  }, [view, players]);
-
-  // Timer countdown
+  // Timer countdown for voting
   useEffect(() => {
     if (view === "voting" && timeRemaining > 0) {
       const timer = setInterval(() => {
@@ -509,69 +101,6 @@ export default function Home() {
     }
   }, [view, timeRemaining]);
 
-  const handlePlay = () => {
-    // Reset lobby state for fresh start
-    setRooms([]);
-    setLobbyLogs(["Initializing agent network..."]);
-    setView("lobby");
-  };
-
-  // Start game when called from lobby (auto-triggered)
-  const handleGameStart = (roomId: number) => {
-    const room = rooms.find(r => r.roomId === roomId);
-    if (!room || room.players.length < 6) return; // Minimum 6 agents
-
-    // Update room status
-    setRooms(prev => prev.map(r =>
-      r.roomId === roomId ? { ...r, status: RoomStatus.InGame } : r
-    ));
-
-    // Convert room players to game players (max 8 agents)
-    // Randomly assign impostor role
-    const impostorIndex = Math.floor(Math.random() * room.players.length);
-    const gamePlayers: Player[] = room.players.slice(0, 8).map((agent, index) => ({
-      address: agent.address,
-      colorId: agent.colorId,
-      role: index === impostorIndex ? Role.Impostor : Role.Crewmate,
-      location: Location.Cafeteria,
-      isAlive: true,
-      tasksCompleted: 0,
-      totalTasks: 5,
-      hasVoted: false,
-    }));
-
-    setPlayers(gamePlayers);
-    setDeadBodies([]);
-    setTasksCompleted(0);
-    setLogs([
-      { type: "start", message: `Game started! Spectating ${gamePlayers.length} agents.`, timestamp: Date.now() },
-      { type: "join", message: "All agents spawned in Cafeteria. Roles assigned secretly.", timestamp: Date.now() - 1000 },
-    ]);
-    setView("game");
-  };
-
-  const handleMoveToRoom = (location: Location) => {
-    // Move current player to the selected room
-    setPlayers(prev => prev.map(p =>
-      p.address === currentPlayer ? { ...p, location } : p
-    ));
-
-    setLogs(prev => [...prev, {
-      type: "task",
-      message: `You moved to ${LocationNames[location]}`,
-      timestamp: Date.now(),
-    }]);
-  };
-
-  const handleReport = () => {
-    setShowBodyReported(true);
-    setLogs(prev => [...prev, {
-      type: "report",
-      message: "Dead body reported!",
-      timestamp: Date.now(),
-    }]);
-  };
-
   const handleBodyReportedDismiss = () => {
     setShowBodyReported(false);
     setTimeRemaining(30);
@@ -579,7 +108,7 @@ export default function Home() {
     setView("voting");
   };
 
-  // Auto-dismiss body reported screen after 3 seconds (spectator mode)
+  // Auto-dismiss body reported screen after 3 seconds
   useEffect(() => {
     if (showBodyReported) {
       const timer = setTimeout(() => {
@@ -589,109 +118,9 @@ export default function Home() {
     }
   }, [showBodyReported]);
 
-  // Autonomous voting - agents vote after discussion
-  useEffect(() => {
-    if (view !== "voting") return;
-
-    // Simulate agents discussing and voting
-    const voteTimer = setTimeout(() => {
-      // Each agent "votes" - randomly choose a target or skip
-      const alivePlayers = players.filter(p => p.isAlive);
-      const votes: Record<string, number> = {};
-
-      alivePlayers.forEach(voter => {
-        // Agents have a tendency to vote for suspicious players (random for now)
-        // Skip vote 20% of the time
-        if (Math.random() < 0.2) {
-          votes["skip"] = (votes["skip"] || 0) + 1;
-        } else {
-          // Vote for a random other alive player
-          const targets = alivePlayers.filter(p => p.address !== voter.address);
-          if (targets.length > 0) {
-            const target = targets[Math.floor(Math.random() * targets.length)];
-            votes[target.address] = (votes[target.address] || 0) + 1;
-          }
-        }
-      });
-
-      // Find the player with most votes
-      let maxVotes = 0;
-      let ejectedAddress: string | null = null;
-
-      Object.entries(votes).forEach(([addr, count]) => {
-        if (count > maxVotes && addr !== "skip") {
-          maxVotes = count;
-          ejectedAddress = addr;
-        }
-      });
-
-      // Need majority to eject (more than half of alive players)
-      const skipVotes = votes["skip"] || 0;
-      const majority = Math.floor(alivePlayers.length / 2) + 1;
-
-      if (maxVotes >= majority && ejectedAddress) {
-        // Someone is ejected
-        const ejected = players.find(p => p.address === ejectedAddress);
-        if (ejected) {
-          setEjectedPlayer(ejected);
-          setShowEjection(true);
-
-          const ejectedColor = PlayerColors[ejected.colorId].name;
-          setLogs(prev => [...prev, {
-            type: "eject" as const,
-            message: `${ejectedColor} was ejected with ${maxVotes} votes`,
-            timestamp: Date.now(),
-          }]);
-
-          // Mark as dead
-          setPlayers(prev => prev.map(p =>
-            p.address === ejectedAddress ? { ...p, isAlive: false } : p
-          ));
-        }
-        setView("game");
-      } else {
-        // No one ejected
-        setLogs(prev => [...prev, {
-          type: "vote" as const,
-          message: `No one was ejected. (Skip: ${skipVotes}, Highest: ${maxVotes})`,
-          timestamp: Date.now(),
-        }]);
-        setView("game");
-      }
-    }, 5000); // 5 seconds of "discussion" before voting completes
-
-    return () => clearTimeout(voteTimer);
-  }, [view, players]);
-
   const handleVote = (target: `0x${string}` | null) => {
     setHasVoted(true);
-
-    setTimeout(() => {
-      const votedPlayer = target ? players.find((p) => p.address === target) : null;
-      if (votedPlayer) {
-        setEjectedPlayer(votedPlayer);
-        setShowEjection(true);
-        setView("game");
-
-        setLogs(prev => [...prev, {
-          type: "eject",
-          message: `${PlayerColors[votedPlayer.colorId].name} was ejected`,
-          timestamp: Date.now(),
-        }]);
-
-        // Remove ejected player
-        setPlayers(prev => prev.map(p =>
-          p.address === target ? { ...p, isAlive: false } : p
-        ));
-      } else {
-        setView("game");
-        setLogs(prev => [...prev, {
-          type: "vote",
-          message: "No one was ejected (Skipped)",
-          timestamp: Date.now(),
-        }]);
-      }
-    }, 2000);
+    // Voting is handled by the server via WebSocket
   };
 
   const handleEjectionDismiss = () => {
@@ -699,7 +128,7 @@ export default function Home() {
     setEjectedPlayer(null);
   };
 
-  // Auto-dismiss ejection screen after 4 seconds (spectator mode)
+  // Auto-dismiss ejection screen after 4 seconds
   useEffect(() => {
     if (showEjection) {
       const timer = setTimeout(() => {
@@ -709,54 +138,37 @@ export default function Home() {
     }
   }, [showEjection]);
 
-  const handleKill = () => {
-    // Find a nearby player to kill
-    const myLocation = currentPlayerData?.location;
-    const targets = players.filter(p =>
-      p.isAlive &&
-      p.address !== currentPlayer &&
-      p.location === myLocation &&
-      p.role !== Role.Impostor
-    );
-
-    if (targets.length > 0) {
-      const victim = targets[0];
-      setPlayers(prev => prev.map(p =>
-        p.address === victim.address ? { ...p, isAlive: false } : p
-      ));
-      setDeadBodies(prev => [...prev, {
-        victim: victim.address,
-        location: victim.location,
-        round: 1n,
-        reported: false,
-      }]);
-      setLogs(prev => [...prev, {
-        type: "kill",
-        message: `${PlayerColors[victim.colorId].name} was killed!`,
-        timestamp: Date.now(),
-      }]);
+  const handleBack = () => {
+    if (currentRoom) {
+      leaveRoom();
     }
+    setView("menu");
   };
-
-  // Check for bodies in current location
-  const bodiesInCurrentLocation = deadBodies.filter(b =>
-    !b.reported &&
-    b.location === currentPlayerData?.location
-  );
 
   return (
     <>
       <AnimatePresence mode="wait">
-        {view === "menu" && <MainMenu key="menu" onPlay={handlePlay} />}
+        {view === "menu" && (
+          <MainMenu
+            key="menu"
+            onPlay={handlePlay}
+            isConnected={isConnected}
+            error={error}
+          />
+        )}
 
         {view === "lobby" && (
-          <LobbyScreen
+          <LobbyView
             key="lobby"
-            agents={mockAgents}
+            isConnected={isConnected}
             rooms={rooms}
-            roomCreator={roomCreator}
-            onGameStart={handleGameStart}
-            onBack={() => setView("menu")}
+            currentRoom={currentRoom}
+            players={players}
+            logs={logs}
+            onCreateRoom={handleCreateRoom}
+            onJoinRoom={handleJoinRoom}
+            onStartGame={handleStartGame}
+            onBack={handleBack}
           />
         )}
 
@@ -766,22 +178,24 @@ export default function Home() {
             <ScrollableMap
               players={players}
               deadBodies={deadBodies}
-              currentPlayer={currentPlayer}
-              onPlayerMove={handleMoveToRoom}
+              currentPlayer={currentPlayer || ("0x0" as `0x${string}`)}
+              onPlayerMove={() => {}} // Spectators don't move
               spotlightedPlayer={spotlightedPlayer}
               onSpotlightPlayer={setSpotlightedPlayer}
             />
 
             {/* Task bar - overlay at top */}
             <div className="fixed top-0 left-0 right-0 z-40 p-4">
-              <TaskBar completed={tasksCompleted} total={25} />
+              <TaskBar completed={tasksCompleted} total={totalTasks} />
             </div>
 
-            {/* Spectator badge */}
+            {/* Connection badge */}
             <div className="fixed top-4 right-4 z-50">
               <div className="flex items-center gap-2 bg-purple-900/80 backdrop-blur-sm rounded-lg px-4 py-2 border border-purple-500/50">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-purple-200 text-sm font-medium">Spectating</span>
+                <div className={`w-2 h-2 rounded-full animate-pulse ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
+                <span className="text-purple-200 text-sm font-medium">
+                  {isConnected ? "Live (WebSocket)" : "Disconnected"}
+                </span>
               </div>
             </div>
 
@@ -811,23 +225,23 @@ export default function Home() {
                           <AmongUsSprite colorId={player.colorId} size={28} showShadow={false} />
                           {isSpotlighted && (
                             <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center">
-                              <span className="text-[8px] text-black font-bold">★</span>
+                              <span className="text-[8px] text-black font-bold">*</span>
                             </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <span
                             className="text-sm font-bold block truncate"
-                            style={{ color: PlayerColors[player.colorId].light }}
+                            style={{ color: PlayerColors[player.colorId]?.light || "#fff" }}
                           >
-                            {PlayerColors[player.colorId].name}
+                            {PlayerColors[player.colorId]?.name || `Player ${player.colorId}`}
                           </span>
                           <span className="text-xs text-gray-400">
-                            {LocationNames[player.location]}
+                            {LocationNames[player.location] || "Unknown"}
                           </span>
                         </div>
                         {!player.isAlive && <span className="text-red-500 text-xs font-bold">DEAD</span>}
-                        {isSpotlighted && <span className="text-yellow-400 text-sm">👁️</span>}
+                        {isSpotlighted && <span className="text-yellow-400 text-sm">*</span>}
                       </div>
                     );
                   })}
@@ -849,8 +263,13 @@ export default function Home() {
                   <div className="text-xs text-gray-500">Dead Bodies</div>
                   <div className="text-lg font-bold text-red-400">{deadBodies.length}</div>
                 </div>
+                {currentRoom && (
+                  <div className="p-2 bg-cyan-900/30 rounded text-center border border-cyan-700/50">
+                    <div className="text-xs text-cyan-400">Room: {currentRoom.roomId}</div>
+                  </div>
+                )}
                 <button
-                  onClick={() => setView("menu")}
+                  onClick={handleBack}
                   className="w-full px-3 py-2 bg-gray-600 text-white rounded font-bold text-sm hover:bg-gray-500"
                 >
                   Exit Spectator
@@ -864,7 +283,7 @@ export default function Home() {
           <VotingScreen
             key="voting"
             players={players}
-            currentPlayer={currentPlayer}
+            currentPlayer={currentPlayer || ("0x0" as `0x${string}`)}
             onVote={handleVote}
             hasVoted={hasVoted}
             timeRemaining={timeRemaining}
@@ -882,7 +301,7 @@ export default function Home() {
       <EjectionScreen
         isVisible={showEjection}
         ejectedColorId={ejectedPlayer?.colorId || 0}
-        ejectedName={ejectedPlayer ? PlayerColors[ejectedPlayer.colorId].name : "Unknown"}
+        ejectedName={ejectedPlayer ? PlayerColors[ejectedPlayer.colorId]?.name || "Unknown" : "Unknown"}
         wasImpostor={ejectedPlayer?.role === Role.Impostor}
         impostorsRemaining={players.filter(p => p.role === Role.Impostor && p.isAlive).length}
         onDismiss={handleEjectionDismiss}
@@ -899,5 +318,266 @@ export default function Home() {
         }}
       />
     </>
+  );
+}
+
+// Lobby View Component - shows rooms from WebSocket server
+interface LobbyViewProps {
+  isConnected: boolean;
+  rooms: Array<{
+    roomId: string;
+    players: Array<{
+      address: string;
+      colorId: number;
+      location: number;
+      isAlive: boolean;
+      tasksCompleted: number;
+      totalTasks: number;
+      hasVoted: boolean;
+    }>;
+    spectators: string[];
+    maxPlayers: number;
+    impostorCount: number;
+    phase: "lobby" | "playing" | "ended";
+    createdAt: number;
+  }>;
+  currentRoom: LobbyViewProps["rooms"][0] | null;
+  players: Player[];
+  logs: GameLog[];
+  onCreateRoom: () => void;
+  onJoinRoom: (roomId: string) => void;
+  onStartGame: () => void;
+  onBack: () => void;
+}
+
+function LobbyView({
+  isConnected,
+  rooms,
+  currentRoom,
+  players,
+  logs,
+  onCreateRoom,
+  onJoinRoom,
+  onStartGame,
+  onBack,
+}: LobbyViewProps) {
+  const lobbyRooms = rooms.filter(r => r.phase === "lobby");
+  const MIN_PLAYERS = 4;
+
+  return (
+    <SpaceBackground>
+      <div className="min-h-screen p-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <span>Back</span>
+          </button>
+
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-white tracking-wider">
+              GAME <span className="text-cyan-400">LOBBY</span>
+            </h1>
+            <p className="text-gray-400 text-sm mt-1">
+              {isConnected ? "Connected - Create or join a room" : "Connecting to server..."}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-800/50 rounded-lg px-4 py-2 border border-slate-700">
+            <div className={`w-3 h-3 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+            <span className={`text-sm ${isConnected ? "text-green-400" : "text-red-400"}`}>
+              {isConnected ? "Live" : "Offline"}
+            </span>
+          </div>
+        </div>
+
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Panel - Available Rooms */}
+          <div className="lg:col-span-1 bg-slate-800/50 rounded-2xl border border-slate-700 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Available Rooms</h2>
+              <span className="text-sm text-gray-400">{lobbyRooms.length} rooms</span>
+            </div>
+
+            <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto">
+              {lobbyRooms.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No rooms available</p>
+                  <p className="text-sm mt-2">Create one to get started!</p>
+                </div>
+              ) : (
+                lobbyRooms.map((room) => (
+                  <div
+                    key={room.roomId}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                      currentRoom?.roomId === room.roomId
+                        ? "bg-cyan-500/20 border-cyan-500/50"
+                        : "bg-slate-700/30 border-slate-600/50 hover:bg-slate-700/50"
+                    }`}
+                    onClick={() => onJoinRoom(room.roomId)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white font-bold">{room.roomId}</span>
+                      <span className="text-xs text-gray-400">
+                        {room.players.length}/{room.maxPlayers} players
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {room.players.slice(0, 6).map((p, i) => (
+                        <div key={i} className="w-6 h-6">
+                          <AmongUsSprite colorId={p.colorId} size={24} />
+                        </div>
+                      ))}
+                      {room.players.length > 6 && (
+                        <span className="text-xs text-gray-400">+{room.players.length - 6}</span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Create Room Button */}
+            <div className="p-4 border-t border-slate-700">
+              <button
+                onClick={onCreateRoom}
+                disabled={!isConnected}
+                className={`w-full py-3 rounded-xl font-bold transition-all ${
+                  isConnected
+                    ? "bg-cyan-500 text-white hover:bg-cyan-400"
+                    : "bg-gray-600 text-gray-400 cursor-not-allowed"
+                }`}
+              >
+                Create New Room
+              </button>
+            </div>
+          </div>
+
+          {/* Middle Panel - Current Room */}
+          <div className="lg:col-span-1 bg-slate-800/50 rounded-2xl border border-cyan-500/50 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-700 bg-cyan-500/10">
+              <h2 className="text-xl font-bold text-white">
+                {currentRoom ? `Room: ${currentRoom.roomId}` : "Select a Room"}
+              </h2>
+            </div>
+
+            <div className="p-6">
+              {currentRoom ? (
+                <>
+                  {/* Players Grid */}
+                  <div className="mb-6">
+                    <div className="text-sm text-gray-400 mb-3 text-center">
+                      Players ({currentRoom.players.length}/{currentRoom.maxPlayers})
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {Array.from({ length: Math.min(currentRoom.maxPlayers, 9) }).map((_, i) => {
+                        const player = currentRoom.players[i];
+                        return (
+                          <div
+                            key={i}
+                            className={`aspect-square rounded-xl flex flex-col items-center justify-center ${
+                              player
+                                ? "bg-slate-700/50 border border-slate-600"
+                                : "bg-slate-900/30 border border-dashed border-slate-700"
+                            }`}
+                          >
+                            {player ? (
+                              <>
+                                <div className="w-10 h-10 mb-1">
+                                  <AmongUsSprite colorId={player.colorId} size={40} />
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {PlayerColors[player.colorId]?.name || `P${i + 1}`}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-gray-600 text-2xl animate-pulse">?</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="text-center">
+                    {currentRoom.players.length >= MIN_PLAYERS ? (
+                      <div className="p-4 bg-green-500/20 rounded-xl border border-green-500/30">
+                        <div className="text-green-400 font-bold mb-2">Ready to Start!</div>
+                        <button
+                          onClick={onStartGame}
+                          className="px-6 py-2 bg-green-500 text-white rounded-lg font-bold hover:bg-green-400"
+                        >
+                          Start Game
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-900/50 rounded-xl">
+                        <div className="text-gray-400">
+                          Waiting for {MIN_PLAYERS - currentRoom.players.length} more player{MIN_PLAYERS - currentRoom.players.length !== 1 ? "s" : ""}...
+                        </div>
+                        <div className="flex justify-center gap-1 mt-2 animate-pulse">
+                          <div className="w-2 h-2 bg-cyan-500 rounded-full" />
+                          <div className="w-2 h-2 bg-cyan-500 rounded-full" />
+                          <div className="w-2 h-2 bg-cyan-500 rounded-full" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4 animate-bounce">?</div>
+                  <p className="text-gray-400">Select a room from the list</p>
+                  <p className="text-gray-500 text-sm mt-2">or create a new one</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel - Activity Log */}
+          <div className="lg:col-span-1 bg-slate-800/50 rounded-2xl border border-slate-700 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white">Activity Log</h2>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-400">Live</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto font-mono text-sm">
+              {logs.length === 0 ? (
+                <div className="text-gray-500 text-center py-4">
+                  Waiting for activity...
+                </div>
+              ) : (
+                logs.map((log, index) => (
+                  <div key={index} className="flex items-start gap-2">
+                    <span className="text-gray-600 flex-shrink-0">
+                      {new Date(log.timestamp).toLocaleTimeString().slice(0, 5)}
+                    </span>
+                    <span className={`${
+                      log.type === "kill" ? "text-red-400" :
+                      log.type === "report" ? "text-yellow-400" :
+                      log.type === "vote" || log.type === "eject" ? "text-orange-400" :
+                      "text-gray-300"
+                    }`}>
+                      {log.message}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </SpaceBackground>
   );
 }

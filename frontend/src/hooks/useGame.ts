@@ -13,15 +13,17 @@ import {
   Role,
   SabotageType,
 } from "@/types/game";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import type { Address } from "viem";
+import { useWebSocket, type WebSocketGameState } from "./useWebSocket";
 
 interface UseGameOptions {
   gameId?: bigint;
   gameAddress?: Address;
+  wsServerUrl?: string; // WebSocket server URL (optional)
 }
 
-export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
+export function useGame({ gameId, gameAddress, wsServerUrl }: UseGameOptions = {}) {
   const [logs, setLogs] = useState<{ type: string; message: string; timestamp: number }[]>([]);
 
   // Get game address from factory if gameId provided
@@ -37,6 +39,51 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
 
   const effectiveGameAddress = gameAddress || (gameAddressFromFactory as Address);
 
+  // WebSocket connection for real-time updates
+  const {
+    isConnected: wsConnected,
+    gameState: wsGameState,
+    events: wsEvents,
+  } = useWebSocket({
+    serverUrl: wsServerUrl || "",
+    gameId: gameId?.toString(),
+    enabled: !!wsServerUrl && !!gameId,
+    onEvent: (event) => {
+      // Add WebSocket events to logs
+      if (event.type === "player_moved") {
+        setLogs((prev) => [
+          ...prev.slice(-49),
+          {
+            type: "move",
+            message: `Player ${event.data.address.slice(0, 8)}... moved to ${event.data.to}`,
+            timestamp: event.timestamp,
+          },
+        ]);
+      } else if (event.type === "kill") {
+        setLogs((prev) => [
+          ...prev.slice(-49),
+          {
+            type: "kill",
+            message: `Player ${event.data.victim.slice(0, 8)}... was killed!`,
+            timestamp: event.timestamp,
+          },
+        ]);
+      } else if (event.type === "vote_cast") {
+        setLogs((prev) => [
+          ...prev.slice(-49),
+          {
+            type: "vote",
+            message: `Player ${event.data.voter.slice(0, 8)}... voted`,
+            timestamp: event.timestamp,
+          },
+        ]);
+      }
+    },
+  });
+
+  // Reduce polling interval when WebSocket is connected (5s -> 15s fallback)
+  const pollingInterval = wsConnected ? 15000 : 5000;
+
   // Read game state
   const { data: rawGameState, refetch: refetchGameState } = useReadContract({
     address: effectiveGameAddress,
@@ -44,7 +91,7 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
     functionName: "getGameState",
     query: {
       enabled: !!effectiveGameAddress,
-      refetchInterval: 5000,
+      refetchInterval: pollingInterval,
     },
   });
 
@@ -55,7 +102,7 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
     functionName: "getPlayers",
     query: {
       enabled: !!effectiveGameAddress,
-      refetchInterval: 5000,
+      refetchInterval: pollingInterval,
     },
   });
 
@@ -66,7 +113,7 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
     functionName: "getDeadBodies",
     query: {
       enabled: !!effectiveGameAddress,
-      refetchInterval: 5000,
+      refetchInterval: pollingInterval,
     },
   });
 
@@ -97,8 +144,8 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
       }
     : undefined;
 
-  // Parse players
-  const players: Player[] = rawPlayers
+  // Parse players from contract
+  const contractPlayers: Player[] = rawPlayers
     ? (rawPlayers as any[]).map((p: any) => ({
         address: p.addr as `0x${string}`,
         colorId: Number(p.colorId),
@@ -111,8 +158,8 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
       }))
     : [];
 
-  // Parse dead bodies
-  const deadBodies: DeadBody[] = rawDeadBodies
+  // Parse dead bodies from contract
+  const contractDeadBodies: DeadBody[] = rawDeadBodies
     ? (rawDeadBodies as any[]).map((b: any) => ({
         victim: b.victim as `0x${string}`,
         location: b.location as Location,
@@ -120,6 +167,41 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
         reported: b.reported,
       }))
     : [];
+
+  // Merge WebSocket data with contract data (WS takes priority for real-time fields)
+  const players: Player[] = useMemo(() => {
+    if (!wsConnected || !wsGameState) return contractPlayers;
+
+    // Use WebSocket positions but keep contract data for authoritative fields like role
+    return contractPlayers.map((contractPlayer) => {
+      const wsPlayer = wsGameState.players.find(
+        (p) => p.address.toLowerCase() === contractPlayer.address.toLowerCase()
+      );
+      if (wsPlayer) {
+        return {
+          ...contractPlayer,
+          location: wsPlayer.location, // Real-time position from WS
+          isAlive: wsPlayer.isAlive,
+          hasVoted: wsPlayer.hasVoted,
+          tasksCompleted: wsPlayer.tasksCompleted,
+        };
+      }
+      return contractPlayer;
+    });
+  }, [wsConnected, wsGameState, contractPlayers]);
+
+  const deadBodies: DeadBody[] = useMemo(() => {
+    if (!wsConnected || !wsGameState) return contractDeadBodies;
+    // Merge: include bodies from both sources, deduplicate by victim
+    const allBodies = new Map<string, DeadBody>();
+    for (const body of contractDeadBodies) {
+      allBodies.set(body.victim.toLowerCase(), body);
+    }
+    for (const body of wsGameState.deadBodies) {
+      allBodies.set(body.victim.toLowerCase(), body);
+    }
+    return Array.from(allBodies.values());
+  }, [wsConnected, wsGameState, contractDeadBodies]);
 
   // Parse config
   const config: GameConfig | undefined = rawConfig
@@ -216,6 +298,9 @@ export function useGame({ gameId, gameAddress }: UseGameOptions = {}) {
     commitAction,
     submitVote,
     refetch,
+    // WebSocket status
+    wsConnected,
+    wsEvents,
   };
 }
 
