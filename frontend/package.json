@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:workers": "npx tsx src/test-workers/run-tests.ts",
+    "test:workers:quick": "npx tsx src/test-workers/run-tests.ts --quick",
+    "test:workers:verbose": "npx tsx src/test-workers/run-tests.ts --verbose"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
