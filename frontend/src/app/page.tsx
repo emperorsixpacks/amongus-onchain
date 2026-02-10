@@ -42,20 +42,19 @@ export default function Home() {
   // WebSocket connection - the ONLY source of truth
   const {
     isConnected,
-    connectionId,
     error,
     rooms,
     currentRoom,
+    stats,
+    leaderboard,
     players,
     deadBodies,
     logs,
     phase,
     tasksCompleted,
     totalTasks,
-    createRoom,
     joinRoom,
     leaveRoom,
-    startGame,
   } = useGameServer();
 
   // Current player (first player for spectator view)
@@ -67,19 +66,9 @@ export default function Home() {
     setView("lobby");
   };
 
-  // Handle room creation
-  const handleCreateRoom = () => {
-    createRoom(10, 2); // 10 max players, 2 impostors
-  };
-
-  // Handle joining a room
+  // Handle joining a room (as spectator)
   const handleJoinRoom = (roomId: string) => {
     joinRoom(roomId, true); // Join as spectator
-  };
-
-  // Handle game start from lobby
-  const handleStartGame = () => {
-    startGame();
   };
 
   // Watch for phase changes from WebSocket
@@ -154,6 +143,9 @@ export default function Home() {
             onPlay={handlePlay}
             isConnected={isConnected}
             error={error}
+            rooms={rooms}
+            stats={stats}
+            leaderboard={leaderboard}
           />
         )}
 
@@ -165,9 +157,8 @@ export default function Home() {
             currentRoom={currentRoom}
             players={players}
             logs={logs}
-            onCreateRoom={handleCreateRoom}
+            stats={stats}
             onJoinRoom={handleJoinRoom}
-            onStartGame={handleStartGame}
             onBack={handleBack}
           />
         )}
@@ -344,9 +335,13 @@ interface LobbyViewProps {
   currentRoom: LobbyViewProps["rooms"][0] | null;
   players: Player[];
   logs: GameLog[];
-  onCreateRoom: () => void;
+  stats: {
+    connections: { total: number; agents: number; spectators: number };
+    rooms: { total: number; maxRooms: number; lobby: number; playing: number; totalPlayers: number };
+    limits: { maxRooms: number; maxPlayersPerRoom: number; minPlayersToStart: number; fillWaitDuration: number; cooldownDuration: number };
+    slots: Array<{ id: number; state: "active" | "cooldown" | "empty"; roomId: string | null; cooldownEndTime: number | null; cooldownRemaining: number | null }>;
+  } | null;
   onJoinRoom: (roomId: string) => void;
-  onStartGame: () => void;
   onBack: () => void;
 }
 
@@ -356,13 +351,14 @@ function LobbyView({
   currentRoom,
   players,
   logs,
-  onCreateRoom,
+  stats,
   onJoinRoom,
-  onStartGame,
   onBack,
 }: LobbyViewProps) {
   const lobbyRooms = rooms.filter(r => r.phase === "lobby");
-  const MIN_PLAYERS = 4;
+  const playingRooms = rooms.filter(r => r.phase === "playing");
+  const MIN_PLAYERS = stats?.limits.minPlayersToStart ?? 6;
+  const cooldownSlots = stats?.slots.filter(s => s.state === "cooldown") ?? [];
 
   return (
     <SpaceBackground>
@@ -384,7 +380,7 @@ function LobbyView({
               GAME <span className="text-cyan-400">LOBBY</span>
             </h1>
             <p className="text-gray-400 text-sm mt-1">
-              {isConnected ? "Connected - Create or join a room" : "Connecting to server..."}
+              {isConnected ? "Connected - Select a room to spectate or wait for agents" : "Connecting to server..."}
             </p>
           </div>
 
@@ -401,11 +397,36 @@ function LobbyView({
           <div className="lg:col-span-1 bg-slate-800/50 rounded-2xl border border-slate-700 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Available Rooms</h2>
-              <span className="text-sm text-gray-400">{lobbyRooms.length} rooms</span>
+              <span className="text-sm text-gray-400">{lobbyRooms.length} lobby / {playingRooms.length} playing</span>
             </div>
 
             <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto">
-              {lobbyRooms.length === 0 ? (
+              {/* Playing rooms first */}
+              {playingRooms.map((room) => (
+                <div
+                  key={room.roomId}
+                  className="p-4 rounded-xl border bg-red-900/20 border-red-600/50 cursor-pointer hover:bg-red-900/30"
+                  onClick={() => onJoinRoom(room.roomId)}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <span className="text-white font-bold">{room.roomId}</span>
+                    </div>
+                    <span className="text-xs px-2 py-1 bg-red-600 text-white rounded">LIVE</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {room.players.slice(0, 6).map((p, i) => (
+                      <div key={i} className="w-6 h-6">
+                        <AmongUsSprite colorId={p.colorId} size={24} />
+                      </div>
+                    ))}
+                    <span className="text-xs text-gray-400">{room.players.length} players</span>
+                  </div>
+                </div>
+              ))}
+
+              {lobbyRooms.length === 0 && playingRooms.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <p>No rooms available</p>
                   <p className="text-sm mt-2">Create one to get started!</p>
@@ -442,20 +463,17 @@ function LobbyView({
               )}
             </div>
 
-            {/* Create Room Button */}
-            <div className="p-4 border-t border-slate-700">
-              <button
-                onClick={onCreateRoom}
-                disabled={!isConnected}
-                className={`w-full py-3 rounded-xl font-bold transition-all ${
-                  isConnected
-                    ? "bg-cyan-500 text-white hover:bg-cyan-400"
-                    : "bg-gray-600 text-gray-400 cursor-not-allowed"
-                }`}
-              >
-                Create New Room
-              </button>
-            </div>
+            {/* Cooldown Info */}
+            {cooldownSlots.length > 0 && (
+              <div className="p-4 border-t border-slate-700">
+                <div className="text-sm text-orange-400 text-center">
+                  {cooldownSlots.length} game{cooldownSlots.length > 1 ? 's' : ''} in cooldown
+                </div>
+                <div className="text-xs text-gray-500 text-center mt-1">
+                  Games restart automatically after cooldown
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Middle Panel - Current Room */}
@@ -506,20 +524,22 @@ function LobbyView({
 
                   {/* Status */}
                   <div className="text-center">
-                    {currentRoom.players.length >= MIN_PLAYERS ? (
+                    {currentRoom.phase === "playing" ? (
+                      <div className="p-4 bg-red-500/20 rounded-xl border border-red-500/30">
+                        <div className="text-red-400 font-bold mb-2">Game in Progress</div>
+                        <div className="text-sm text-gray-400">Watch the action unfold!</div>
+                      </div>
+                    ) : currentRoom.players.length >= MIN_PLAYERS ? (
                       <div className="p-4 bg-green-500/20 rounded-xl border border-green-500/30">
-                        <div className="text-green-400 font-bold mb-2">Ready to Start!</div>
-                        <button
-                          onClick={onStartGame}
-                          className="px-6 py-2 bg-green-500 text-white rounded-lg font-bold hover:bg-green-400"
-                        >
-                          Start Game
-                        </button>
+                        <div className="text-green-400 font-bold mb-2 animate-pulse">Starting Soon!</div>
+                        <div className="text-sm text-gray-400">
+                          Game will auto-start in a few seconds
+                        </div>
                       </div>
                     ) : (
                       <div className="p-4 bg-slate-900/50 rounded-xl">
                         <div className="text-gray-400">
-                          Waiting for {MIN_PLAYERS - currentRoom.players.length} more player{MIN_PLAYERS - currentRoom.players.length !== 1 ? "s" : ""}...
+                          Waiting for {MIN_PLAYERS - currentRoom.players.length} more agent{MIN_PLAYERS - currentRoom.players.length !== 1 ? "s" : ""}...
                         </div>
                         <div className="flex justify-center gap-1 mt-2 animate-pulse">
                           <div className="w-2 h-2 bg-cyan-500 rounded-full" />

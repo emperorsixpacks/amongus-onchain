@@ -28,6 +28,50 @@ interface ServerMessage {
   [key: string]: any;
 }
 
+interface RoomSlotInfo {
+  id: number;
+  state: "active" | "cooldown" | "empty";
+  roomId: string | null;
+  cooldownEndTime: number | null;
+  cooldownRemaining: number | null;
+}
+
+interface AgentStats {
+  address: string;
+  name: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  kills: number;
+  tasksCompleted: number;
+  timesImpostor: number;
+  timesCrewmate: number;
+  lastSeen: number;
+}
+
+interface ServerStats {
+  connections: {
+    total: number;
+    agents: number;
+    spectators: number;
+  };
+  rooms: {
+    total: number;
+    maxRooms: number;
+    lobby: number;
+    playing: number;
+    totalPlayers: number;
+  };
+  limits: {
+    maxRooms: number;
+    maxPlayersPerRoom: number;
+    minPlayersToStart: number;
+    fillWaitDuration: number;
+    cooldownDuration: number;
+  };
+  slots: RoomSlotInfo[];
+}
+
 export interface UseGameServerReturn {
   // Connection
   isConnected: boolean;
@@ -37,6 +81,12 @@ export interface UseGameServerReturn {
   // Rooms
   rooms: RoomState[];
   currentRoom: RoomState | null;
+
+  // Server stats
+  stats: ServerStats | null;
+
+  // Leaderboard
+  leaderboard: AgentStats[];
 
   // Game state (derived from current room)
   players: Player[];
@@ -61,10 +111,19 @@ export function useGameServer(): UseGameServerReturn {
 
   const [rooms, setRooms] = useState<RoomState[]>([]);
   const [currentRoom, setCurrentRoom] = useState<RoomState | null>(null);
+  const [stats, setStats] = useState<ServerStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<AgentStats[]>([]);
   const [deadBodies, setDeadBodies] = useState<DeadBody[]>([]);
   const [logs, setLogs] = useState<GameLog[]>([]);
 
-  const addLog = useCallback((type: GameLog["type"], message: string) => {
+  // Track current room ID for filtering logs
+  const currentRoomIdRef = useRef<string | null>(null);
+
+  const addLog = useCallback((type: GameLog["type"], message: string, gameId?: string) => {
+    // Only add log if it's for the current room or no room specified (global events)
+    if (gameId && currentRoomIdRef.current && gameId !== currentRoomIdRef.current) {
+      return; // Skip logs from other rooms
+    }
     setLogs((prev) => [...prev.slice(-49), { type, message, timestamp: Date.now() }]);
   }, []);
 
@@ -91,6 +150,13 @@ export function useGameServer(): UseGameServerReturn {
 
         case "server:room_list":
           setRooms(message.rooms);
+          if (message.stats) {
+            setStats(message.stats);
+          }
+          break;
+
+        case "server:leaderboard":
+          setLeaderboard(message.agents || []);
           break;
 
         case "server:room_created":
@@ -99,16 +165,18 @@ export function useGameServer(): UseGameServerReturn {
 
         case "server:room_update":
           setCurrentRoom(message.room);
+          currentRoomIdRef.current = message.room.roomId;
           // Clear dead bodies on room update (fresh state)
           if (message.room.phase === "lobby") {
             setDeadBodies([]);
+            setLogs([]); // Clear logs when entering a new room lobby
           }
           break;
 
         case "server:player_joined":
-          addLog("join", `Player joined (color ${message.player.colorId})`);
+          addLog("join", `Player joined (color ${message.player.colorId})`, message.gameId);
           setCurrentRoom((prev) => {
-            if (!prev) return prev;
+            if (!prev || prev.roomId !== message.gameId) return prev;
             const exists = prev.players.some(
               (p) => p.address === message.player.address
             );
@@ -118,7 +186,7 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:player_left":
-          addLog("join", `Player left`);
+          addLog("join", `Player left`, message.gameId);
           setCurrentRoom((prev) => {
             if (!prev) return prev;
             return {
@@ -145,9 +213,9 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:kill_occurred":
-          addLog("kill", `A player was eliminated!`);
+          addLog("kill", `A player was eliminated!`, message.gameId);
           setCurrentRoom((prev) => {
-            if (!prev) return prev;
+            if (!prev || prev.roomId !== message.gameId) return prev;
             return {
               ...prev,
               players: prev.players.map((p) =>
@@ -167,13 +235,13 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:phase_changed":
-          addLog("start", `Phase changed to ${message.phase}`);
+          addLog("start", `Phase changed to ${message.phase}`, message.gameId);
           break;
 
         case "server:task_completed":
-          addLog("task", `Task completed`);
+          addLog("task", `Task completed`, message.gameId);
           setCurrentRoom((prev) => {
-            if (!prev) return prev;
+            if (!prev || prev.roomId !== message.gameId) return prev;
             return {
               ...prev,
               players: prev.players.map((p) =>
@@ -190,9 +258,9 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:vote_cast":
-          addLog("vote", `Vote cast`);
+          addLog("vote", `Vote cast`, message.gameId);
           setCurrentRoom((prev) => {
-            if (!prev) return prev;
+            if (!prev || prev.roomId !== message.gameId) return prev;
             return {
               ...prev,
               players: prev.players.map((p) =>
@@ -203,7 +271,7 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:body_reported":
-          addLog("kill", `Body reported! ${message.reporter} found ${message.victim}`);
+          addLog("kill", `Body reported! ${message.reporter} found ${message.victim}`, message.gameId);
           // Mark body as reported
           setDeadBodies((prev) =>
             prev.map((b) =>
@@ -213,10 +281,10 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:player_ejected":
-          addLog("vote", `${message.ejected} was ejected. ${message.wasImpostor ? "They were an Impostor!" : "They were a Crewmate."}`);
+          addLog("vote", `${message.ejected} was ejected. ${message.wasImpostor ? "They were an Impostor!" : "They were a Crewmate."}`, message.gameId);
           // Mark player as dead
           setCurrentRoom((prev) => {
-            if (!prev) return prev;
+            if (!prev || prev.roomId !== message.gameId) return prev;
             return {
               ...prev,
               players: prev.players.map((p) =>
@@ -227,7 +295,7 @@ export function useGameServer(): UseGameServerReturn {
           break;
 
         case "server:game_ended":
-          addLog("start", message.crewmatesWon ? "Crewmates win!" : "Impostors win!");
+          addLog("start", message.crewmatesWon ? "Crewmates win!" : "Impostors win!", message.gameId);
           break;
       }
     } catch (err) {
@@ -270,6 +338,7 @@ export function useGameServer(): UseGameServerReturn {
 
   const joinRoom = useCallback((roomId: string, asSpectator = true) => {
     send({ type: "client:join_room", roomId, asSpectator });
+    currentRoomIdRef.current = roomId;
     setLogs([{ type: "start", message: `Joining room ${roomId}...`, timestamp: Date.now() }]);
     setDeadBodies([]);
   }, [send]);
@@ -277,6 +346,7 @@ export function useGameServer(): UseGameServerReturn {
   const leaveRoom = useCallback(() => {
     if (currentRoom) {
       send({ type: "client:leave_room", roomId: currentRoom.roomId });
+      currentRoomIdRef.current = null;
       setCurrentRoom(null);
       setDeadBodies([]);
       setLogs([]);
@@ -316,6 +386,8 @@ export function useGameServer(): UseGameServerReturn {
     error,
     rooms,
     currentRoom,
+    stats,
+    leaderboard,
     players,
     deadBodies,
     logs,
