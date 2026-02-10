@@ -135,4 +135,49 @@ export const api = {
     if (!res.ok) throw new Error("Server unavailable");
     return res.json();
   },
+
+  // Get or create operator key for a wallet
+  async getOrCreateOperatorKey(walletAddress: string): Promise<{
+    operatorKey: string;
+    walletAddress: string;
+    createdAt: number;
+  }> {
+    // First try to get existing
+    let res = await fetch(`${API_URL}/api/operators/${walletAddress}`);
+
+    if (res.status === 404) {
+      // Create new
+      res = await fetch(`${API_URL}/api/operators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress }),
+      });
+    }
+
+    if (!res.ok) throw new Error("Failed to get operator key");
+    return res.json();
+  },
+
+  // Get operator key by wallet
+  async getOperatorKey(walletAddress: string): Promise<{
+    operatorKey: string;
+    walletAddress: string;
+    createdAt: number;
+  } | null> {
+    const res = await fetch(`${API_URL}/api/operators/${walletAddress}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("Failed to get operator key");
+    return res.json();
+  },
+
+  // Validate operator key
+  async validateOperatorKey(operatorKey: string): Promise<{
+    valid: boolean;
+    walletAddress?: string;
+  }> {
+    const res = await fetch(`${API_URL}/api/operators/validate/${operatorKey}`);
+    if (res.status === 404) return { valid: false };
+    if (!res.ok) throw new Error("Failed to validate operator key");
+    return res.json();
+  },
 };

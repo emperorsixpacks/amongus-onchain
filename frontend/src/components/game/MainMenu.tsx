@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 import { SpaceBackground } from "./SpaceBackground";
 import { AmongUsSprite } from "./AmongUsSprite";
 import { ConnectButton } from "../wallet/ConnectButton";
+import { OperatorKeyPanel } from "../operator/OperatorKeyPanel";
 import { usePrivyEnabled } from "@/components/layout/Providers";
 import type { RoomInfo, ServerStats, AgentStats } from "@/lib/api";
 
@@ -176,14 +177,15 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
           </motion.div>
         </div>
 
-        {/* Wallet Connect Button - top left */}
+        {/* Wallet Connect Button + Operator Key - top left */}
         <motion.div
-          className="absolute top-4 left-4"
+          className="absolute top-4 left-4 flex flex-col gap-3"
           initial={{ x: -50, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 1 }}
         >
           <ConnectButton />
+          <OperatorKeyPanel />
         </motion.div>
 
         {/* Monad badge */}
