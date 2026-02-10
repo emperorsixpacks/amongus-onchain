@@ -1,10 +1,65 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import crypto from "crypto";
 import { createLogger } from "./logger.js";
 import { privyWalletService } from "./PrivyWalletService.js";
 import type { WebSocketRelayServer } from "./WebSocketServer.js";
 
 const logger = createLogger("api");
+
+// ============ OPERATOR KEY STORAGE ============
+
+interface StoredOperatorKey {
+  operatorKey: string;
+  walletAddress: string;
+  createdAt: number;
+}
+
+// In-memory storage (in production, use a database)
+const operatorKeysByWallet = new Map<string, StoredOperatorKey>();
+const operatorKeyLookup = new Map<string, string>(); // operatorKey -> walletAddress
+
+function generateOperatorKey(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  const randomBytes = crypto.randomBytes(16);
+  for (let i = 0; i < 16; i++) {
+    result += chars[randomBytes[i] % chars.length];
+  }
+  return `oper_${result}`;
+}
+
+function getOrCreateOperatorKey(walletAddress: string): StoredOperatorKey {
+  const normalizedAddress = walletAddress.toLowerCase();
+
+  // Check if already exists
+  const existing = operatorKeysByWallet.get(normalizedAddress);
+  if (existing) {
+    return existing;
+  }
+
+  // Create new operator key
+  const operatorKey = generateOperatorKey();
+  const entry: StoredOperatorKey = {
+    operatorKey,
+    walletAddress: normalizedAddress,
+    createdAt: Date.now(),
+  };
+
+  operatorKeysByWallet.set(normalizedAddress, entry);
+  operatorKeyLookup.set(operatorKey, normalizedAddress);
+
+  logger.info(`Created operator key for ${normalizedAddress.slice(0, 10)}...`);
+  return entry;
+}
+
+function getOperatorKeyByWallet(walletAddress: string): StoredOperatorKey | null {
+  return operatorKeysByWallet.get(walletAddress.toLowerCase()) || null;
+}
+
+function validateOperatorKey(operatorKey: string): string | null {
+  return operatorKeyLookup.get(operatorKey) || null;
+}
 
 export function createApiServer(wsServer: WebSocketRelayServer) {
   const app = express();
@@ -90,6 +145,76 @@ export function createApiServer(wsServer: WebSocketRelayServer) {
     }
 
     res.json(stats);
+  });
+
+  // ============ OPERATOR KEYS ============
+
+  // Get or create operator key for a wallet address
+  app.post("/api/operators", (req: Request, res: Response) => {
+    const { walletAddress } = req.body;
+
+    if (!walletAddress || typeof walletAddress !== "string") {
+      res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      res.status(400).json({ error: "Invalid wallet address format" });
+      return;
+    }
+
+    const entry = getOrCreateOperatorKey(walletAddress);
+
+    res.json({
+      operatorKey: entry.operatorKey,
+      walletAddress: entry.walletAddress,
+      createdAt: entry.createdAt,
+    });
+  });
+
+  // Get operator key by wallet address
+  app.get("/api/operators/:walletAddress", (req: Request<{ walletAddress: string }>, res: Response) => {
+    const { walletAddress } = req.params;
+
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      res.status(400).json({ error: "Invalid wallet address format" });
+      return;
+    }
+
+    const entry = getOperatorKeyByWallet(walletAddress);
+
+    if (!entry) {
+      res.status(404).json({ error: "No operator key found for this wallet" });
+      return;
+    }
+
+    res.json({
+      operatorKey: entry.operatorKey,
+      walletAddress: entry.walletAddress,
+      createdAt: entry.createdAt,
+    });
+  });
+
+  // Validate an operator key (returns wallet address if valid)
+  app.get("/api/operators/validate/:operatorKey", (req: Request<{ operatorKey: string }>, res: Response) => {
+    const { operatorKey } = req.params;
+
+    if (!operatorKey.startsWith("oper_")) {
+      res.status(400).json({ error: "Invalid operator key format" });
+      return;
+    }
+
+    const walletAddress = validateOperatorKey(operatorKey);
+
+    if (!walletAddress) {
+      res.status(404).json({ error: "Operator key not found", valid: false });
+      return;
+    }
+
+    res.json({
+      valid: true,
+      walletAddress,
+    });
   });
 
   // ============ OPERATOR / AGENTS ============
