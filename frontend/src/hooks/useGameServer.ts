@@ -303,7 +303,11 @@ export function useGameServer(): UseGameServerReturn {
     }
   }, [addLog]);
 
-  // Connect on mount
+  // Store handleMessage in a ref to avoid reconnection loops
+  const handleMessageRef = useRef(handleMessage);
+  handleMessageRef.current = handleMessage;
+
+  // Connect on mount (only once)
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -314,7 +318,7 @@ export function useGameServer(): UseGameServerReturn {
     };
 
     ws.onmessage = (event) => {
-      handleMessage(event.data);
+      handleMessageRef.current(event.data);
     };
 
     ws.onclose = () => {
@@ -322,14 +326,15 @@ export function useGameServer(): UseGameServerReturn {
       setConnectionId(null);
     };
 
-    ws.onerror = () => {
+    ws.onerror = (e) => {
+      console.error("WebSocket error:", e);
       setError("Connection failed");
     };
 
     return () => {
       ws.close();
     };
-  }, [handleMessage]);
+  }, []); // Empty deps - only connect once
 
   // Actions
   const createRoom = useCallback((maxPlayers = 10, impostorCount = 2) => {
