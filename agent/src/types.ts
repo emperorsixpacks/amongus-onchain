@@ -177,6 +177,7 @@ export interface AgentConfig {
   minBankroll: bigint;
 }
 
+
 export interface AgentStats {
   gamesPlayed: number;
   gamesWon: number;

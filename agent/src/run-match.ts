@@ -100,8 +100,10 @@ async function runMatch() {
           maxWagerPerGame: WAGER_AMOUNT,
           minBankroll: WAGER_AMOUNT * 2n,
         },
-        config.crewmateStyle,
-        config.impostorStyle
+        {
+          crewmateStyle: config.crewmateStyle,
+          impostorStyle: config.impostorStyle,
+        }
       )
   );
 
