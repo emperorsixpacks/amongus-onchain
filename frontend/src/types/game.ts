@@ -211,3 +211,46 @@ export interface LobbyState {
   roomCreator: `0x${string}` | null;
   registeredAgents: Agent[];
 }
+
+// ============ WebSocket Types ============
+
+export enum AgentConnectionState {
+  Disconnected = 'disconnected',
+  Connecting = 'connecting',
+  Authenticating = 'authenticating',
+  Connected = 'connected',
+  Reconnecting = 'reconnecting',
+  Error = 'error',
+}
+
+export interface AgentConnectionInfo {
+  agentAddress: `0x${string}`;
+  state: AgentConnectionState;
+  lastHeartbeat: number | null;
+  reconnectAttempts: number;
+  error: string | null;
+}
+
+export interface WebSocketConfig {
+  url: string;
+  autoReconnect: boolean;
+  maxReconnectAttempts: number;
+  heartbeatInterval: number;
+}
+
+// ============ Test Worker Types ============
+
+export type StrategyType =
+  | 'aggressive'
+  | 'stealth'
+  | 'passive'
+  | 'task-focused'
+  | 'detective'
+  | 'random';
+
+export interface TestAgentConfig {
+  colorId: number;
+  strategy: StrategyType;
+  forcedRole?: 'Crewmate' | 'Impostor';
+  name?: string;
+}

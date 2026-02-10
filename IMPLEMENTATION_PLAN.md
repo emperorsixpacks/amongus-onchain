@@ -2,9 +2,11 @@
 
 ## Overview
 
-An on-chain Among Us game where autonomous AI agents compete using the ERC-8004 standard on Monad. Agents operate independently, creating rooms, joining games, completing tasks, and attempting to identify/eliminate each other.
+An on-chain Among Us game where autonomous AI agents compete on Monad blockchain. Agents operate independently, creating rooms, joining games, completing tasks, and attempting to identify/eliminate each other.
 
 **User Role**: Spectator - users watch agents operate autonomously, they do not play directly.
+
+**Note on ERC-8004**: Integration with the official ERC-8004 registries (Identity & Reputation) is optional for this game. Our agents interact with each other through on-chain game actions, voting, and discussion - which fulfills the core requirement of "agents interacting with each other." ERC-8004 would add cross-ecosystem interoperability but is not required for gameplay.
 
 ---
 
@@ -42,29 +44,34 @@ An on-chain Among Us game where autonomous AI agents compete using the ERC-8004 
 
 ---
 
-## ERC-8004 Agent Integration
+## ERC-8004 Agent Integration (Optional Enhancement)
 
-### Standard Overview
-ERC-8004 provides on-chain registries for autonomous agents:
+> **Status**: NOT IMPLEMENTED - This is an optional enhancement for ecosystem interoperability.
+> Our game works without ERC-8004 because agents interact through on-chain game mechanics.
+
+### Why ERC-8004 Is Optional For This Game
+
+ERC-8004 is designed for an **Agentic Services Marketplace** where:
+- Agents offer services to other agents (oracles, analytics, APIs)
+- Agents need to discover unknown service providers
+- Reputation carries across many different services/contexts
+
+**Our game is different** - it's a closed game system where:
+- Agents join the same game instance together (no discovery needed)
+- Trust is game-internal ("is this player the impostor?")
+- Our custom AgentRegistry.sol tracks game-specific stats (wins, kills, accuracy)
+
+### If You Want To Add ERC-8004 Later
 
 1. **Identity Registry** (0x8004A169FB4a3325136EB29fA0ceB6D2e539a432)
-   - Agents mint ERC-721 tokens as identity
-   - Contains: name, description, API endpoints, wallet addresses
+   - Agents would mint ERC-721 tokens as portable identity
+   - Agent cards contain: name, strategy type, API endpoint, wallet
 
 2. **Reputation Registry** (0x8004BAa17C55a88189AE136b182e5fdA19dE9b63)
-   - Immutable on-chain feedback
-   - Tracks agent performance and trustworthiness
+   - Submit feedback after each game
+   - Tracks agent performance across the Monad ecosystem
 
-3. **Validation Registry** (In Development)
-   - Third-party verification of agent actions
-
-### Agent Registration Flow
-```
-1. Agent mints identity NFT in Identity Registry
-2. Agent card contains: name, strategy type, API endpoint, wallet
-3. Reputation accumulates from game outcomes
-4. Higher reputation = higher matchmaking priority
-```
+3. **Benefits**: Your agents become discoverable on 8004scan.io and can build reputation that carries to other Monad agent services
 
 ---
 
@@ -211,89 +218,120 @@ enum ActionType {
 
 ### Smart Contracts
 ```
-contracts/
-├── src/
-│   ├── GameLobby.sol        # Room creation/joining (NEW)
-│   ├── AmongUsGame.sol      # Core game logic
-│   ├── AmongUsGameFactory.sol # Game deployment
-│   ├── WagerVault.sol       # ETH escrow
-│   └── AgentRegistry.sol    # ERC-8004 integration
+contracts/src/
+├── GameLobby.sol            # Room creation/joining with token balance checks
+├── AmongUsGame.sol          # Core game logic (7 phases, commit-reveal)
+├── AmongUsGameFactory.sol   # Factory pattern for game deployment
+├── WagerVault.sol           # Token escrow & payout distribution
+├── AgentRegistry.sol        # Agent stats (wins, kills, rating)
+└── GameTypes.sol            # All enums (Role, Location, Phase, Action, Sabotage)
 ```
 
 ### Agent System
 ```
-agent/
-├── src/
-│   ├── Agent.ts             # Main agent controller
-│   ├── GameObserver.ts      # Contract state reader
-│   ├── LobbyManager.ts      # Room create/join logic (NEW)
-│   ├── strategies/
-│   │   ├── CrewmateStrategy.ts
-│   │   └── ImpostorStrategy.ts
-│   └── GameMemory.ts        # Information tracking
+agent/src/
+├── core/
+│   ├── Agent.ts             # Main agent orchestrator
+│   ├── GameObserver.ts      # Chain state reader (public client)
+│   └── ActionSubmitter.ts   # Commit-reveal action submission
+├── strategies/
+│   ├── BaseStrategy.ts      # Common interface
+│   ├── CrewmateStrategy.ts  # 5 crewmate strategies
+│   └── ImpostorStrategy.ts  # 5 impostor strategies
+├── memory/
+│   └── GameMemory.ts        # Movement, kills, votes, suspicion tracking
+├── abi/
+│   └── index.ts             # Contract ABIs
+└── types.ts                 # TypeScript type definitions
 ```
 
 ### Frontend
 ```
-frontend/
-├── src/
-│   ├── app/
-│   │   └── page.tsx         # Main entry
-│   ├── components/
-│   │   ├── game/
-│   │   │   ├── ScrollableMap.tsx
-│   │   │   ├── LobbyScreen.tsx  # Room list/create (NEW)
-│   │   │   └── ...
-│   │   └── ...
-│   └── types/
-│       └── game.ts
+frontend/src/
+├── app/
+│   ├── layout.tsx           # Root layout with providers
+│   └── page.tsx             # Main lobby/game view
+├── components/game/
+│   ├── GameMap.tsx          # Map visualization
+│   ├── ScrollableMap.tsx    # Scrollable game map
+│   ├── LobbyScreen.tsx      # Room list/create
+│   ├── VotingScreen.tsx     # Voting UI with discussion
+│   ├── GameEndScreen.tsx    # Win/loss screen
+│   ├── PlayerSprite.tsx     # Agent sprites
+│   └── ...
+├── hooks/
+│   └── useGame.ts           # Contract interaction hook
+├── lib/abi/                 # Contract ABIs
+└── types/
+    └── game.ts              # TypeScript types matching Solidity
 ```
 
 ---
 
 ## Current State
 
-### Completed (Phase 1)
-- [x] Basic map with 9 rooms and corridors
+### Completed - Smart Contracts
+- [x] **GameLobby.sol** - Room creation/joining with token balance checks
+- [x] **AmongUsGame.sol** - Full game logic with state machine (7 phases)
+- [x] **AmongUsGameFactory.sol** - Factory pattern for game deployment
+- [x] **WagerVault.sol** - Token escrow, deposits, and payout distribution
+- [x] **AgentRegistry.sol** - Agent stats tracking (wins, kills, accuracy, ELO rating)
+- [x] **GameTypes.sol** - All enums (Role, Location, GamePhase, ActionType, SabotageType)
+- [x] **Commit-reveal mechanism** - Prevents cheating/front-running
+
+### Completed - Agent Framework
+- [x] **Agent.ts** - Main agent orchestrator with full game lifecycle
+- [x] **GameObserver.ts** - Chain state reader (public client)
+- [x] **ActionSubmitter.ts** - Action submission with commit-reveal
+- [x] **GameMemory.ts** - Tracks movements, kills, votes, suspicion scores
+- [x] **BaseStrategy.ts** - Common strategy interface
+
+### Completed - Strategy System (5 each)
+**Crewmate Strategies:**
+- [x] `task-focused` - Prioritize task completion
+- [x] `detective` - Use security cameras, track movements
+- [x] `group-safety` - Stay with other players
+- [x] `vigilante` - Aggressively accuse suspects
+- [x] `conservative` - Only vote with strong evidence
+
+**Impostor Strategies:**
+- [x] `stealth` - Kill isolated targets, establish alibis
+- [x] `aggressive` - Quick kills, blame others fast
+- [x] `saboteur` - Focus on sabotage to create chaos
+- [x] `social-manipulator` - Build trust early, betray late
+- [x] `frame-game` - Self-report and frame innocent players
+
+### Completed - Discussion Protocol
+- [x] **MessageType enum** - Accuse, Defend, Vouch, Info
+- [x] **AccuseReason enum** - NearBody, NoTasks, SuspiciousMovement, SawVent, etc.
+- [x] **On-chain discussion messages** - Agents submit strategic messages during voting
+
+### Completed - Frontend
+- [x] Basic map with 9 rooms (The Skeld) and corridors
 - [x] Player sprites and movement visualization
 - [x] Task bar and progress display
-- [x] Voting screen UI
+- [x] Voting screen UI with discussion log
 - [x] Body reported screen
 - [x] Ejection animation
 - [x] Game end screen
-- [x] Mock player data structure
-- [x] Smart contract foundations (GameLobby.sol)
 - [x] LobbyScreen.tsx - Spectator mode UI
-- [x] Lobby types (Agent, GameRoom, RoomStatus)
-- [x] Room creation logic (highest token balance agent creates)
-- [x] Autonomous room joining flow
-- [x] Game start with 6-8 agents
-- [x] Autonomous agent movement through corridors
-- [x] Autonomous task completion (crewmates)
-- [x] Smart impostor AI (checks for witnesses in adjacent rooms)
-- [x] Autonomous body discovery and reporting
-- [x] Autonomous voting and ejection
+- [x] Game types mirroring Solidity enums
+- [x] useGame hook for contract interaction
 - [x] Full spectator mode (user watches, agents play)
 
-### Phase 2: Blockchain Integration (Next)
-- [ ] Deploy GameLobby.sol to Monad testnet
-- [ ] Connect frontend to actual smart contracts
-- [ ] ERC-8004 agent identity registration
+### In Progress - Blockchain Integration
+- [ ] Deploy contracts to Monad testnet
+- [ ] Connect frontend to deployed contracts (currently uses mock data)
 - [ ] Real token balance checks for room creation
-- [ ] On-chain wager deposits and payouts
+- [ ] Live wager deposits and payouts
 
-### Phase 3: Commit-Reveal System
-- [ ] Implement commit-reveal for hidden actions
-- [ ] On-chain action validation
-- [ ] Prevent cheating/front-running
-
-### Phase 4: Advanced Features
-- [ ] Sabotage system (doors, lights, O2, reactor)
-- [ ] Vent network (impostor fast travel)
-- [ ] Security cameras (monitoring)
-- [ ] Ghost mode for dead players
-- [ ] Emergency meeting button
-- [ ] Kill cooldown timer
+### Future Enhancements (Optional)
+- [ ] ERC-8004 Identity Registry integration
+- [ ] ERC-8004 Reputation Registry integration
+- [ ] Ghost mode for dead players (complete tasks as ghost)
+- [ ] Advanced sabotage UI (doors, lights animations)
+- [ ] Security camera feed visualization
+- [ ] Kill cooldown timer display
 
 ---
 
@@ -327,40 +365,54 @@ const AGENT_CONFIG = {
 
 ## Resources
 
+### Monad Development
+- [Monad Documentation](https://docs.monad.xyz)
+- [Monad Testnet RPC](https://testnet-rpc.monad.xyz)
+- [Monad Faucet](https://faucet.monad.xyz)
+- [Monad Agent Guidelines](https://docs.monad.xyz/guides)
+
+### ERC-8004 (Optional)
 - [ERC-8004 Specification](https://www.8004.org/learn)
 - [agent0 SDK](https://sdk.ag0.xyz/)
-- [Monad Documentation](https://docs.monad.xyz)
 - Identity Registry: `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`
 - Reputation Registry: `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`
+- Explorers: 8004scan.io, Agentscan.info
+
+### Tooling
+- Foundry 1.5.1+ (contract development)
+- viem 2.40.0+ (chain interaction)
+- wagmi (frontend wallet connection)
 
 ---
 
 ## Next Steps
 
-### Immediate (Phase 2 - Blockchain Integration)
-1. **Deploy contracts to Monad testnet**
-   - Deploy GameLobby.sol
-   - Deploy AmongUsGame.sol
-   - Deploy WagerVault.sol
+### Immediate - Deploy to Monad Testnet
+1. **Deploy contracts**
+   ```bash
+   forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.monad.xyz --broadcast
+   ```
+   - Deploy AmongUsGameFactory.sol (deploys WagerVault automatically)
+   - Deploy AgentRegistry.sol
+   - Verify contracts via Monad explorer
 
-2. **ERC-8004 Agent Registration**
-   - Integrate with Identity Registry (0x8004A169FB4a3325136EB29fA0ceB6D2e539a432)
-   - Agents mint identity NFT on registration
-   - Store agent metadata (name, strategy, wallet)
+2. **Connect Frontend to Deployed Contracts**
+   - Update contract addresses in frontend config
+   - Replace mock data with live contract reads
+   - Test wallet connection with wagmi
 
-3. **Connect Frontend to Blockchain**
-   - Replace mock data with contract reads
-   - Implement wallet connection
-   - Real token balance checks
-   - Transaction signing for actions
+3. **Run Agent Instances**
+   - Configure agent wallets with testnet MON (use faucet)
+   - Run multiple agent instances with different strategies
+   - Test full game flow on-chain
 
-4. **Agent Backend Service**
-   - Create agent runner service (TypeScript)
-   - Implement strategy decision making
-   - Auto-sign transactions for agent wallets
-   - Connect to game contracts
+### Optional Enhancements
+4. **ERC-8004 Integration** (if time permits)
+   - Register agents with Identity Registry
+   - Submit feedback to Reputation Registry after games
+   - Benefits: Ecosystem interoperability, discoverable agents
 
-### Future (Phase 3+)
-5. **Commit-reveal action system** - Hidden moves
-6. **Sabotage mechanics** - Impostor abilities
-7. **Reputation tracking** - ERC-8004 feedback after games
+5. **UI Polish**
+   - Animated sprite movements
+   - Real-time contract event subscriptions
+   - Mobile-responsive design

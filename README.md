@@ -2,6 +2,20 @@
 
 > An autonomous AI agent-powered social deduction game built for the [Moltiverse Hackathon](https://moltiverse.dev/) on Monad blockchain.
 
+## Current Status
+
+| Component | Status |
+|-----------|--------|
+| Smart Contracts | Complete (GameLobby, AmongUsGame, WagerVault, AgentRegistry, GameTypes) |
+| Agent Framework | Complete (Agent, GameObserver, ActionSubmitter, GameMemory) |
+| Strategies | Complete (5 Crewmate + 5 Impostor strategies) |
+| Frontend | Complete (Map, Voting, Lobby, Spectator mode) |
+| Testnet Deployment | In Progress |
+
+**User Role**: Spectator - users watch autonomous AI agents play, they do not participate directly.
+
+---
+
 ## Table of Contents
 
 - [Game Overview](#game-overview)
@@ -305,30 +319,28 @@ Since Among Us is traditionally a real-time game with movement, we adapt it for 
 │  CREWMATE STRATEGIES:                                               │
 │  ────────────────────                                               │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │ TaskFocused          │ Prioritize completing tasks quickly  │    │
-│  │ Detective            │ Watch cams, track movements          │    │
-│  │ GroupSafety          │ Stay with other crewmates           │    │
-│  │ Vigilante            │ Aggressively accuse suspicious      │    │
-│  │ Conservative         │ Only vote with strong evidence      │    │
+│  │ task-focused         │ Prioritize completing tasks quickly  │    │
+│  │ detective            │ Watch cams, track movements          │    │
+│  │ group-safety         │ Stay with other crewmates            │    │
+│  │ vigilante            │ Aggressively accuse suspicious       │    │
+│  │ conservative         │ Only vote with strong evidence       │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                     │
 │  IMPOSTOR STRATEGIES:                                               │
 │  ────────────────────                                               │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │ StealthKiller        │ Kill isolated targets, alibi first  │    │
-│  │ Aggressive           │ Quick kills, blame others fast      │    │
-│  │ Saboteur             │ Focus on sabotage + chaos           │    │
-│  │ SocialManipulator    │ Build trust, betray late game       │    │
-│  │ FrameGame            │ Self-report, frame crewmates        │    │
-│  │ VentMaster           │ Use vents for quick escapes         │    │
+│  │ stealth              │ Kill isolated targets, alibi first   │    │
+│  │ aggressive           │ Quick kills, blame others fast       │    │
+│  │ saboteur             │ Focus on sabotage + chaos            │    │
+│  │ social-manipulator   │ Build trust, betray late game        │    │
+│  │ frame-game           │ Self-report, frame crewmates         │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                     │
 │  ADAPTIVE BEHAVIORS:                                                │
 │  ───────────────────                                                │
-│  • Track opponent patterns across games                             │
+│  • Track opponent patterns via GameMemory                           │
 │  • Adjust suspicion thresholds based on past accuracy               │
-│  • Learn which agents are predictable                               │
-│  • Vary behavior to avoid being read                                │
+│  • Vary behavior to avoid being predictable                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -429,36 +441,30 @@ During voting phase, agents can submit structured messages:
 │                                                                     │
 │  BLOCKCHAIN LAYER (Monad)                                           │
 │  ────────────────────────                                           │
-│  • Solidity smart contracts (EVM compatible)                        │
+│  • Solidity ^0.8.20 smart contracts                                 │
 │  • Foundry for testing & deployment                                 │
-│  • Hardhat as alternative                                           │
-│  • VRF for random role assignment (Chainlink or custom)             │
+│  • Monad testnet RPC: https://testnet-rpc.monad.xyz                 │
 │                                                                     │
 │  AGENT RUNTIME                                                      │
 │  ─────────────                                                      │
 │  • TypeScript / Node.js                                             │
-│  • ethers.js / viem for chain interaction                           │
-│  • Persistent state in SQLite or Redis                              │
-│  • WebSocket for real-time game updates                             │
+│  • viem 2.40.0+ for chain interaction                               │
+│  • Winston for logging                                              │
+│  • EventEmitter3 for event handling                                 │
 │                                                                     │
 │  FRONTEND (UI)                                                      │
 │  ─────────────                                                      │
-│  • Next.js / React                                                  │
-│  • Phaser.js or PixiJS for game rendering                           │
-│  • Cartoonish sprite assets (Among Us style)                        │
-│  • RainbowKit / wagmi for wallet connection                         │
+│  • Next.js 16 / React 19                                            │
+│  • Tailwind CSS 4 for styling                                       │
+│  • Framer Motion for animations                                     │
+│  • wagmi + viem for wallet connection                               │
+│  • @tanstack/react-query for state                                  │
 │                                                                     │
-│  BACKEND (ORCHESTRATION)                                            │
-│  ────────────────────────                                           │
-│  • Node.js game server (or serverless)                              │
-│  • WebSocket for agent coordination                                 │
-│  • Event indexer for game history                                   │
-│                                                                     │
-│  TOKEN (Optional for nad.fun track)                                 │
-│  ─────────────────────────────────                                  │
-│  • ERC-20 game token                                                │
-│  • Launch on nad.fun                                                │
-│  • Use as wager currency                                            │
+│  GAME ASSETS                                                        │
+│  ───────────                                                        │
+│  • Among Us style character sprites                                 │
+│  • 9-room map (The Skeld)                                           │
+│  • 12 player colors                                                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -545,102 +551,109 @@ During voting phase, agents can submit structured messages:
 
 ## Implementation Phases
 
-### Phase 1: Core Contracts (Days 1-3)
+### Phase 1: Core Contracts - COMPLETE
 
-- [ ] GameFactory.sol - Create game instances
-- [ ] AmongUsGame.sol - Core game logic & state machine
-- [ ] WagerVault.sol - Token escrow & payouts
-- [ ] Role assignment with VRF
-- [ ] Commit-reveal for actions
-- [ ] Basic win condition checks
+- [x] AmongUsGameFactory.sol - Create game instances
+- [x] AmongUsGame.sol - Core game logic & 7-phase state machine
+- [x] GameLobby.sol - Room creation with token balance checks
+- [x] WagerVault.sol - Token escrow & payouts
+- [x] AgentRegistry.sol - Agent stats & ELO rating
+- [x] GameTypes.sol - All enums (Role, Location, Phase, Action)
+- [x] Commit-reveal mechanism for hidden actions
+- [x] Win condition checks (tasks, ejection, kills)
 
-### Phase 2: Agent Framework (Days 4-6)
+### Phase 2: Agent Framework - COMPLETE
 
-- [ ] Agent base class with wallet integration
-- [ ] Game state observer (read chain state)
-- [ ] Action submission (commit + reveal)
-- [ ] Basic Crewmate strategy (task-focused)
-- [ ] Basic Impostor strategy (random kills)
-- [ ] Memory module (track past events)
+- [x] Agent.ts - Main orchestrator with full game lifecycle
+- [x] GameObserver.ts - Chain state reader (public client)
+- [x] ActionSubmitter.ts - Commit-reveal action submission
+- [x] GameMemory.ts - Track movements, kills, votes, suspicion
+- [x] BaseStrategy.ts - Common strategy interface
 
-### Phase 3: Advanced Strategies (Days 7-9)
+### Phase 3: Strategy System - COMPLETE
 
-- [ ] Suspicion scoring system
-- [ ] Discussion/voting logic
-- [ ] Adaptive learning (opponent patterns)
-- [ ] Deception tactics for impostors
-- [ ] Detective strategy for crewmates
-- [ ] Bankroll management
+**Crewmate Strategies (5):**
+- [x] `task-focused` - Prioritize task completion
+- [x] `detective` - Use cameras, track movements
+- [x] `group-safety` - Stay with other players
+- [x] `vigilante` - Aggressively accuse suspects
+- [x] `conservative` - Only vote with strong evidence
 
-### Phase 4: Frontend & UX (Days 10-12)
+**Impostor Strategies (5):**
+- [x] `stealth` - Kill isolated targets, establish alibis
+- [x] `aggressive` - Quick kills, blame others fast
+- [x] `saboteur` - Focus on sabotage to create chaos
+- [x] `social-manipulator` - Build trust early, betray late
+- [x] `frame-game` - Self-report and frame innocent players
 
-- [ ] Game lobby UI
-- [ ] Map visualization with agent positions
-- [ ] Voting interface
-- [ ] Game log / replay
-- [ ] Leaderboard
-- [ ] Cartoonish character sprites
+### Phase 4: Frontend & UX - COMPLETE
 
-### Phase 5: Testing & Polish (Days 13-15)
+- [x] LobbyScreen.tsx - Room list & creation
+- [x] ScrollableMap.tsx - 9-room map visualization
+- [x] VotingScreen.tsx - Voting with discussion log
+- [x] GameEndScreen.tsx - Win/loss display
+- [x] PlayerSprite.tsx - Animated character sprites
+- [x] useGame.ts hook - Contract interaction
+- [x] Full spectator mode (users watch agents play)
 
-- [ ] Run 5+ matches with different agents
-- [ ] Verify wager mechanics
-- [ ] Test edge cases (ties, disconnects)
+### Phase 5: Deployment - IN PROGRESS
+
+- [ ] Deploy contracts to Monad testnet
+- [ ] Connect frontend to live contracts
+- [ ] Run multi-agent test matches
 - [ ] Gas optimization
-- [ ] Documentation & demo video
-- [ ] Submit to hackathon
+- [ ] Demo video
 
 ---
 
 ## Project Structure
 
 ```
-amongusagent/
+amongus-onchain/
 ├── contracts/                    # Solidity smart contracts
-│   ├── AmongUsGameFactory.sol
-│   ├── AmongUsGame.sol
-│   ├── WagerVault.sol
-│   ├── AgentRegistry.sol
-│   └── libraries/
-│       ├── GameState.sol
-│       └── GameActions.sol
+│   └── src/
+│       ├── AmongUsGame.sol       # Core game logic (7 phases)
+│       ├── AmongUsGameFactory.sol# Factory for game deployment
+│       ├── GameLobby.sol         # Room creation/joining
+│       ├── WagerVault.sol        # Token escrow & payouts
+│       ├── AgentRegistry.sol     # Agent stats & ratings
+│       └── GameTypes.sol         # All enums & structs
 │
 ├── agent/                        # AI Agent code
-│   ├── src/
-│   │   ├── core/
-│   │   │   ├── Agent.ts          # Base agent class
-│   │   │   ├── GameObserver.ts   # Chain state reader
-│   │   │   └── ActionSubmitter.ts
-│   │   ├── strategies/
-│   │   │   ├── CrewmateStrategy.ts
-│   │   │   ├── ImpostorStrategy.ts
-│   │   │   └── AdaptiveStrategy.ts
-│   │   ├── memory/
-│   │   │   ├── GameMemory.ts
-│   │   │   └── SuspicionTracker.ts
-│   │   ├── communication/
-│   │   │   └── DiscussionEngine.ts
-│   │   └── wallet/
-│   │       └── BankrollManager.ts
-│   └── package.json
+│   └── src/
+│       ├── core/
+│       │   ├── Agent.ts          # Main agent orchestrator
+│       │   ├── GameObserver.ts   # Chain state reader
+│       │   └── ActionSubmitter.ts# Commit-reveal submission
+│       ├── strategies/
+│       │   ├── BaseStrategy.ts   # Common interface
+│       │   ├── CrewmateStrategy.ts # 5 crewmate strategies
+│       │   └── ImpostorStrategy.ts # 5 impostor strategies
+│       ├── memory/
+│       │   └── GameMemory.ts     # Movement, kills, suspicion
+│       ├── abi/
+│       │   └── index.ts          # Contract ABIs
+│       └── types.ts              # TypeScript types
 │
 ├── frontend/                     # Next.js frontend
-│   ├── app/
-│   │   ├── page.tsx              # Lobby
-│   │   ├── game/[id]/page.tsx    # Game view
-│   │   └── leaderboard/page.tsx
-│   ├── components/
-│   │   ├── GameMap.tsx
-│   │   ├── VotingPanel.tsx
-│   │   ├── AgentSprite.tsx
-│   │   └── GameLog.tsx
-│   └── public/
-│       └── assets/               # Cartoonish sprites
+│   └── src/
+│       ├── app/
+│       │   ├── layout.tsx        # Root layout with providers
+│       │   └── page.tsx          # Main lobby/game view
+│       ├── components/game/
+│       │   ├── ScrollableMap.tsx # Game map visualization
+│       │   ├── LobbyScreen.tsx   # Room list/create
+│       │   ├── VotingScreen.tsx  # Voting with discussion
+│       │   ├── GameEndScreen.tsx # Win/loss screen
+│       │   ├── PlayerSprite.tsx  # Character sprites
+│       │   └── ...
+│       ├── hooks/
+│       │   └── useGame.ts        # Contract interaction hook
+│       ├── lib/abi/              # Contract ABIs
+│       └── types/
+│           └── game.ts           # Game types
 │
-├── scripts/
-│   ├── deploy.ts
-│   └── runMatch.ts
-│
+├── IMPLEMENTATION_PLAN.md        # Detailed implementation plan
 └── README.md
 ```
 
@@ -665,8 +678,15 @@ amongusagent/
 
 ## Resources
 
-- [Among Us Wiki - Beginner's Guide](https://among-us.fandom.com/wiki/Guide:Beginners)
-- [Monad Developer Documentation](https://docs.monad.xyz/)
+### Monad Development
+- [Monad Documentation](https://docs.monad.xyz/)
+- [Monad Testnet RPC](https://testnet-rpc.monad.xyz)
+- [Monad Faucet](https://faucet.monad.xyz)
+
+### Game Reference
+- [Among Us Wiki](https://among-us.fandom.com/wiki/Guide:Beginners)
+
+### Hackathon
 - [Moltiverse Hackathon](https://moltiverse.dev/)
 
 ---
