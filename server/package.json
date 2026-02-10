@@ -12,23 +12,29 @@
     "simulate": "tsx src/simulate.ts",
     "lint": "eslint src/**/*.ts"
   },
-  "keywords": ["among-us", "websocket", "relay-server", "monad"],
+  "keywords": [
+    "among-us",
+    "websocket",
+    "relay-server",
+    "monad"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.18.0",
-    "winston": "^3.14.0",
+    "@privy-io/node": "^0.8.0",
     "dotenv": "^16.4.5",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "winston": "^3.14.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.12",
     "@types/uuid": "^10.0.0",
-    "typescript": "^5.6.0",
-    "tsx": "^4.19.0",
-    "eslint": "^9.0.0",
+    "@types/ws": "^8.5.12",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0"
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }

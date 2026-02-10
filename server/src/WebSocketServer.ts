@@ -8,9 +8,11 @@ import type {
   Location,
   GamePhase,
   DeadBodyState,
+  AgentStats,
 } from "./types.js";
 import { createLogger } from "./logger.js";
 import { GameStateManager, WinConditionResult } from "./GameStateManager.js";
+import { privyWalletService } from "./PrivyWalletService.js";
 
 const logger = createLogger("websocket-server");
 
@@ -18,6 +20,14 @@ const logger = createLogger("websocket-server");
 const DISCUSSION_DURATION = 30000; // 30 seconds
 const VOTING_DURATION = 30000; // 30 seconds
 const EJECTION_DURATION = 5000; // 5 seconds
+
+// Room management constants
+const MAX_ROOMS = 3;
+const MAX_PLAYERS_PER_ROOM = 10;
+const MIN_PLAYERS_TO_START = 6;
+const FILL_WAIT_DURATION = 30000; // 30 seconds to wait for room to fill after min players
+const MIN_PLAYERS_WAIT_DURATION = 120000; // 2 minutes to wait for min players before deleting room
+const COOLDOWN_DURATION = 600000; // 10 minutes cooldown after game ends
 
 interface Client {
   id: string;
@@ -34,6 +44,18 @@ export interface WebSocketServerConfig {
   host?: string;
 }
 
+// Room slot state for automatic management
+type RoomSlotState = "active" | "cooldown" | "empty";
+
+interface RoomSlot {
+  id: number;
+  state: RoomSlotState;
+  roomId: string | null;
+  cooldownEndTime: number | null;
+  fillTimer: NodeJS.Timeout | null;
+  minPlayersTimer: NodeJS.Timeout | null;
+}
+
 // Extended room state with game mechanics
 interface ExtendedRoomState extends RoomState {
   impostors: Set<string>;
@@ -42,6 +64,7 @@ interface ExtendedRoomState extends RoomState {
   currentRound: number;
   currentPhase: GamePhase;
   phaseTimer: NodeJS.Timeout | null;
+  slotId: number; // Which slot this room belongs to
 }
 
 export class WebSocketRelayServer {
@@ -49,12 +72,26 @@ export class WebSocketRelayServer {
   private clients: Map<string, Client> = new Map();
   private rooms: Map<string, RoomState> = new Map();
   private extendedState: Map<string, ExtendedRoomState> = new Map();
+  private roomSlots: RoomSlot[] = [];
+  private agentStats: Map<string, AgentStats> = new Map(); // Track agent statistics
   private gameStateManager: GameStateManager;
   private config: WebSocketServerConfig;
 
   constructor(config: WebSocketServerConfig) {
     this.config = config;
     this.gameStateManager = new GameStateManager();
+
+    // Initialize room slots
+    for (let i = 0; i < MAX_ROOMS; i++) {
+      this.roomSlots.push({
+        id: i,
+        state: "empty",
+        roomId: null,
+        cooldownEndTime: null,
+        fillTimer: null,
+        minPlayersTimer: null,
+      });
+    }
   }
 
   start(): void {
@@ -65,6 +102,8 @@ export class WebSocketRelayServer {
 
     this.wss.on("listening", () => {
       logger.info(`WebSocket server listening on ${this.config.host || "0.0.0.0"}:${this.config.port}`);
+      // Auto-create rooms for all slots on server start
+      this.initializeRoomSlots();
     });
 
     this.wss.on("connection", (ws, req) => {
@@ -74,6 +113,227 @@ export class WebSocketRelayServer {
     this.wss.on("error", (error) => {
       logger.error(`Server error: ${error}`);
     });
+  }
+
+  // ============ AUTOMATIC ROOM MANAGEMENT ============
+
+  private initializeRoomSlots(): void {
+    logger.info("Initializing room slots...");
+    for (const slot of this.roomSlots) {
+      this.createRoomForSlot(slot.id);
+    }
+  }
+
+  private createRoomForSlot(slotId: number): void {
+    const slot = this.roomSlots[slotId];
+    if (!slot || slot.state !== "empty") return;
+
+    const roomId = `game-${slotId + 1}-${uuidv4().slice(0, 6)}`;
+    const room: RoomState = {
+      roomId,
+      players: [],
+      spectators: [],
+      maxPlayers: MAX_PLAYERS_PER_ROOM,
+      impostorCount: 2,
+      phase: "lobby",
+      createdAt: Date.now(),
+    };
+
+    this.rooms.set(roomId, room);
+    slot.state = "active";
+    slot.roomId = roomId;
+    slot.cooldownEndTime = null;
+
+    logger.info(`Room ${roomId} created for slot ${slotId}`);
+
+    // Start timer to check for minimum players
+    slot.minPlayersTimer = setTimeout(() => {
+      this.checkMinPlayers(slotId);
+    }, MIN_PLAYERS_WAIT_DURATION);
+
+    this.broadcastRoomList();
+
+    // Broadcast new room available to all agents
+    this.broadcastToAll({
+      type: "server:room_available",
+      roomId,
+      slotId,
+    } as any);
+  }
+
+  private checkMinPlayers(slotId: number): void {
+    const slot = this.roomSlots[slotId];
+    if (!slot || !slot.roomId) return;
+
+    const room = this.rooms.get(slot.roomId);
+    if (!room || room.phase !== "lobby") return;
+
+    if (room.players.length < MIN_PLAYERS_TO_START) {
+      logger.info(`Room ${slot.roomId} has ${room.players.length} players (need ${MIN_PLAYERS_TO_START}), deleting and starting cooldown`);
+      this.deleteRoomAndCooldown(slotId);
+    }
+  }
+
+  private startFillTimer(slotId: number): void {
+    const slot = this.roomSlots[slotId];
+    if (!slot || slot.fillTimer) return;
+
+    logger.info(`Starting fill timer for slot ${slotId} (${FILL_WAIT_DURATION / 1000}s to reach max players)`);
+
+    slot.fillTimer = setTimeout(() => {
+      this.onFillTimerExpired(slotId);
+    }, FILL_WAIT_DURATION);
+  }
+
+  private onFillTimerExpired(slotId: number): void {
+    const slot = this.roomSlots[slotId];
+    if (!slot || !slot.roomId) return;
+
+    const room = this.rooms.get(slot.roomId);
+    if (!room || room.phase !== "lobby") return;
+
+    slot.fillTimer = null;
+
+    if (room.players.length >= MIN_PLAYERS_TO_START) {
+      logger.info(`Fill timer expired for slot ${slotId}, starting game with ${room.players.length} players`);
+      this.autoStartGame(slot.roomId);
+    }
+  }
+
+  private deleteRoomAndCooldown(slotId: number): void {
+    const slot = this.roomSlots[slotId];
+    if (!slot) return;
+
+    // Clear timers
+    if (slot.fillTimer) {
+      clearTimeout(slot.fillTimer);
+      slot.fillTimer = null;
+    }
+    if (slot.minPlayersTimer) {
+      clearTimeout(slot.minPlayersTimer);
+      slot.minPlayersTimer = null;
+    }
+
+    // Delete the room
+    if (slot.roomId) {
+      const room = this.rooms.get(slot.roomId);
+      if (room) {
+        // Notify players
+        this.broadcastToRoom(slot.roomId, {
+          type: "server:error",
+          code: "ROOM_CLOSED",
+          message: "Room closed due to insufficient players",
+        });
+
+        // Remove players from room
+        for (const player of room.players) {
+          const client = this.findClientByAddress(player.address);
+          if (client) {
+            client.roomId = undefined;
+          }
+        }
+        for (const specId of room.spectators) {
+          const client = this.clients.get(specId);
+          if (client) {
+            client.roomId = undefined;
+          }
+        }
+      }
+
+      this.rooms.delete(slot.roomId);
+      this.extendedState.delete(slot.roomId);
+    }
+
+    // Start cooldown
+    slot.state = "cooldown";
+    slot.roomId = null;
+    slot.cooldownEndTime = Date.now() + COOLDOWN_DURATION;
+
+    logger.info(`Slot ${slotId} entering cooldown until ${new Date(slot.cooldownEndTime).toISOString()}`);
+
+    this.broadcastRoomList();
+
+    // Schedule room creation after cooldown
+    setTimeout(() => {
+      this.onCooldownExpired(slotId);
+    }, COOLDOWN_DURATION);
+  }
+
+  private onCooldownExpired(slotId: number): void {
+    const slot = this.roomSlots[slotId];
+    if (!slot || slot.state !== "cooldown") return;
+
+    logger.info(`Cooldown expired for slot ${slotId}, creating new room`);
+    slot.state = "empty";
+    slot.cooldownEndTime = null;
+    this.createRoomForSlot(slotId);
+  }
+
+  private onPlayerJoinedRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room || room.phase !== "lobby") return;
+
+    // Find slot for this room
+    const slot = this.roomSlots.find(s => s.roomId === roomId);
+    if (!slot) return;
+
+    // Clear min players timer since we have activity
+    if (slot.minPlayersTimer) {
+      clearTimeout(slot.minPlayersTimer);
+      slot.minPlayersTimer = null;
+    }
+
+    // Check if we should start the game
+    if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
+      // Room is full, start immediately
+      logger.info(`Room ${roomId} is full (${room.players.length} players), starting game`);
+      if (slot.fillTimer) {
+        clearTimeout(slot.fillTimer);
+        slot.fillTimer = null;
+      }
+      this.autoStartGame(roomId);
+    } else if (room.players.length >= MIN_PLAYERS_TO_START) {
+      // Start fill timer if not already running
+      if (!slot.fillTimer) {
+        this.startFillTimer(slot.id);
+      }
+    } else {
+      // Reset min players timer
+      slot.minPlayersTimer = setTimeout(() => {
+        this.checkMinPlayers(slot.id);
+      }, MIN_PLAYERS_WAIT_DURATION);
+    }
+  }
+
+  private autoStartGame(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room || room.phase !== "lobby") return;
+
+    if (room.players.length < MIN_PLAYERS_TO_START) {
+      logger.warn(`Cannot auto-start ${roomId}: only ${room.players.length} players (need ${MIN_PLAYERS_TO_START})`);
+      return;
+    }
+
+    // Find and clear slot timers
+    const slot = this.roomSlots.find(s => s.roomId === roomId);
+    if (slot) {
+      if (slot.fillTimer) {
+        clearTimeout(slot.fillTimer);
+        slot.fillTimer = null;
+      }
+      if (slot.minPlayersTimer) {
+        clearTimeout(slot.minPlayersTimer);
+        slot.minPlayersTimer = null;
+      }
+    }
+
+    this.startGameInternal(roomId);
+  }
+
+  private broadcastToAll(message: ServerMessage): void {
+    for (const client of this.clients.values()) {
+      this.send(client, message);
+    }
   }
 
   stop(): void {
@@ -94,7 +354,7 @@ export class WebSocketRelayServer {
 
     logger.info(`Client connected: ${clientId}`);
 
-    // Send welcome + room list
+    // Send welcome + room list + leaderboard
     this.send(client, {
       type: "server:welcome",
       connectionId: clientId,
@@ -104,6 +364,13 @@ export class WebSocketRelayServer {
     this.send(client, {
       type: "server:room_list",
       rooms: Array.from(this.rooms.values()),
+    });
+
+    // Send current leaderboard
+    this.send(client, {
+      type: "server:leaderboard",
+      agents: this.getLeaderboard(10),
+      timestamp: Date.now(),
     });
 
     ws.on("message", (data) => {
@@ -135,7 +402,8 @@ export class WebSocketRelayServer {
         break;
 
       case "client:create_room":
-        this.handleCreateRoom(client, message.maxPlayers, message.impostorCount);
+        // Manual room creation disabled - server manages rooms automatically
+        this.sendError(client, "MANUAL_CREATION_DISABLED", "Rooms are created automatically by the server");
         break;
 
       case "client:join_room":
@@ -147,7 +415,8 @@ export class WebSocketRelayServer {
         break;
 
       case "client:start_game":
-        this.handleStartGame(client, message.roomId);
+        // Manual game start disabled - games start automatically
+        this.sendError(client, "MANUAL_START_DISABLED", "Games start automatically when enough players join");
         break;
 
       // Legacy agent messages (for backwards compat)
@@ -188,6 +457,15 @@ export class WebSocketRelayServer {
         this.handleReportBody(client, message.gameId, message.reporter, message.bodyLocation, message.round);
         break;
 
+      // Operator messages
+      case "operator:create_agent":
+        this.handleCreateAgent(client, message.operatorKey);
+        break;
+
+      case "operator:list_agents":
+        this.handleListAgents(client, message.operatorKey);
+        break;
+
       default:
         logger.warn(`Unknown message type from ${client.id}`);
     }
@@ -198,28 +476,11 @@ export class WebSocketRelayServer {
     client.name = name || address?.slice(0, 8) || `Client-${client.id.slice(0, 6)}`;
     client.isAgent = !!address;
     logger.info(`Client ${client.id} authenticated as ${client.name} (agent: ${client.isAgent})`);
-  }
 
-  private handleCreateRoom(client: Client, maxPlayers?: number, impostorCount?: number): void {
-    const roomId = `room-${uuidv4().slice(0, 8)}`;
-    const room: RoomState = {
-      roomId,
-      players: [],
-      spectators: [],
-      maxPlayers: maxPlayers || 10,
-      impostorCount: impostorCount || 2,
-      phase: "lobby",
-      createdAt: Date.now(),
-    };
-
-    this.rooms.set(roomId, room);
-    logger.info(`Room created: ${roomId} by ${client.name}`);
-
-    // Notify creator
-    this.send(client, { type: "server:room_created", room });
-
-    // Broadcast room list update to all clients
-    this.broadcastRoomList();
+    // Track agent in stats
+    if (address) {
+      this.getOrCreateAgentStats(address, client.name);
+    }
   }
 
   private handleJoinRoom(client: Client, roomId: string, colorId?: number, asSpectator?: boolean): void {
@@ -244,9 +505,10 @@ export class WebSocketRelayServer {
       }
       logger.info(`Spectator ${client.name} joined room ${roomId}`);
     } else {
-      // Join as player
-      if (room.players.length >= room.maxPlayers) {
-        this.sendError(client, "ROOM_FULL", "Room is full");
+      // Join as player - enforce both room.maxPlayers and global limit
+      const effectiveMaxPlayers = Math.min(room.maxPlayers, MAX_PLAYERS_PER_ROOM);
+      if (room.players.length >= effectiveMaxPlayers) {
+        this.sendError(client, "ROOM_FULL", `Room is full (max ${effectiveMaxPlayers} players)`);
         return;
       }
 
@@ -269,6 +531,9 @@ export class WebSocketRelayServer {
         gameId: roomId,
         player: playerState,
       });
+
+      // Trigger auto-start logic
+      this.onPlayerJoinedRoom(roomId);
     }
 
     // Send current room state to the joining client
@@ -303,24 +568,24 @@ export class WebSocketRelayServer {
     client.roomId = undefined;
     logger.info(`Client ${client.name} left room ${roomId}`);
 
-    // Delete empty rooms
-    if (room.players.length === 0 && room.spectators.length === 0) {
+    // Don't delete rooms when empty - keep them visible for reconnecting
+    // Only delete rooms that have ended (handled in endGame)
+    // But clean up extended state if the game ended and no one is in the room
+    if (room.players.length === 0 && room.spectators.length === 0 && room.phase === "ended") {
       this.rooms.delete(roomId);
-      logger.info(`Room ${roomId} deleted (empty)`);
+      this.extendedState.delete(roomId);
+      logger.info(`Room ${roomId} deleted (ended and empty)`);
     }
 
     this.broadcastRoomList();
   }
 
-  private handleStartGame(client: Client, roomId: string): void {
+  private startGameInternal(roomId: string): void {
     const room = this.rooms.get(roomId);
-    if (!room) {
-      this.sendError(client, "ROOM_NOT_FOUND", "Room not found");
-      return;
-    }
+    if (!room) return;
 
-    if (room.players.length < 4) {
-      this.sendError(client, "NOT_ENOUGH_PLAYERS", "Need at least 4 players to start");
+    if (room.players.length < MIN_PLAYERS_TO_START) {
+      logger.warn(`Cannot start ${roomId}: only ${room.players.length} players`);
       return;
     }
 
@@ -338,6 +603,10 @@ export class WebSocketRelayServer {
       impostorAddresses.push(room.players[idx].address);
     }
 
+    // Find the slot for this room
+    const slot = this.roomSlots.find(s => s.roomId === roomId);
+    const slotId = slot?.id ?? -1;
+
     // Initialize extended room state
     const extended: ExtendedRoomState = {
       ...room,
@@ -347,6 +616,7 @@ export class WebSocketRelayServer {
       currentRound: 1,
       currentPhase: 2, // ActionCommit
       phaseTimer: null,
+      slotId,
     };
     this.extendedState.set(roomId, extended);
 
@@ -441,6 +711,9 @@ export class WebSocketRelayServer {
     });
 
     logger.info(`Kill in room ${roomId}: ${killer} killed ${victim}`);
+
+    // Record kill for agent stats
+    this.recordKill(killer);
 
     // Check win condition
     this.checkAndHandleWinCondition(roomId);
@@ -582,8 +855,9 @@ export class WebSocketRelayServer {
 
   private broadcastRoomList(): void {
     const roomList = Array.from(this.rooms.values());
+    const stats = this.getStats();
     for (const client of this.clients.values()) {
-      this.send(client, { type: "server:room_list", rooms: roomList });
+      this.send(client, { type: "server:room_list", rooms: roomList, stats });
     }
   }
 
@@ -873,10 +1147,16 @@ export class WebSocketRelayServer {
       extended.phaseTimer = null;
     }
 
+    // Record game stats for all players BEFORE changing phase
+    this.recordGameEnd(roomId, crewmatesWon);
+
     room.phase = "ended";
     if (extended) {
       extended.currentPhase = 7; // Ended
     }
+
+    // Find slot
+    const slotId = extended?.slotId ?? this.roomSlots.findIndex(s => s.roomId === roomId);
 
     this.broadcastToRoom(roomId, {
       type: "server:game_ended",
@@ -888,10 +1168,17 @@ export class WebSocketRelayServer {
 
     logger.info(`Game ended in room ${roomId}: ${crewmatesWon ? "Crewmates" : "Impostors"} win by ${reason}`);
 
-    // Clean up extended state after a delay
+    // Start cooldown for this slot after a short delay (let players see the end screen)
     setTimeout(() => {
-      this.extendedState.delete(roomId);
-    }, 10000);
+      if (slotId >= 0) {
+        this.deleteRoomAndCooldown(slotId);
+      } else {
+        // Fallback: just delete the room
+        this.rooms.delete(roomId);
+        this.extendedState.delete(roomId);
+        this.broadcastRoomList();
+      }
+    }, 10000); // 10 second delay before cooldown starts
   }
 
   // ============ HELPER METHODS ============
@@ -901,10 +1188,276 @@ export class WebSocketRelayServer {
   }
 
   getStats() {
+    let totalAgents = 0;
+    let totalSpectators = 0;
+    let totalPlayers = 0;
+    let activeGames = 0;
+    let lobbyRooms = 0;
+
+    for (const client of this.clients.values()) {
+      if (client.isAgent) {
+        totalAgents++;
+      } else {
+        totalSpectators++;
+      }
+    }
+
+    for (const room of this.rooms.values()) {
+      totalPlayers += room.players.length;
+      if (room.phase === "playing") {
+        activeGames++;
+      } else if (room.phase === "lobby") {
+        lobbyRooms++;
+      }
+    }
+
+    // Build slot info with cooldown times
+    const slots = this.roomSlots.map(slot => ({
+      id: slot.id,
+      state: slot.state,
+      roomId: slot.roomId,
+      cooldownEndTime: slot.cooldownEndTime,
+      cooldownRemaining: slot.cooldownEndTime ? Math.max(0, slot.cooldownEndTime - Date.now()) : null,
+    }));
+
     return {
-      connections: { total: this.clients.size, agents: 0, spectators: 0 },
-      rooms: { rooms: this.rooms.size, totalMembers: 0 },
-      games: { games: 0, players: 0 },
+      connections: {
+        total: this.clients.size,
+        agents: totalAgents,
+        spectators: totalSpectators
+      },
+      rooms: {
+        total: this.rooms.size,
+        maxRooms: MAX_ROOMS,
+        lobby: lobbyRooms,
+        playing: activeGames,
+        totalPlayers
+      },
+      limits: {
+        maxRooms: MAX_ROOMS,
+        maxPlayersPerRoom: MAX_PLAYERS_PER_ROOM,
+        minPlayersToStart: MIN_PLAYERS_TO_START,
+        fillWaitDuration: FILL_WAIT_DURATION,
+        cooldownDuration: COOLDOWN_DURATION,
+      },
+      slots,
     };
+  }
+
+  // Get all rooms (for external access)
+  getRooms(): RoomState[] {
+    return Array.from(this.rooms.values());
+  }
+
+  // ============ AGENT STATS & LEADERBOARD ============
+
+  private getOrCreateAgentStats(address: string, name?: string): AgentStats {
+    const key = address.toLowerCase();
+    let stats = this.agentStats.get(key);
+    if (!stats) {
+      stats = {
+        address: key,
+        name: name || address.slice(0, 8),
+        gamesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        kills: 0,
+        tasksCompleted: 0,
+        timesImpostor: 0,
+        timesCrewmate: 0,
+        lastSeen: Date.now(),
+      };
+      this.agentStats.set(key, stats);
+    }
+    // Update name if provided
+    if (name) {
+      stats.name = name;
+    }
+    stats.lastSeen = Date.now();
+    return stats;
+  }
+
+  private recordKill(killerAddress: string): void {
+    const stats = this.getOrCreateAgentStats(killerAddress);
+    stats.kills++;
+    logger.info(`Kill recorded for ${stats.name}: ${stats.kills} total kills`);
+  }
+
+  private recordGameEnd(roomId: string, crewmatesWon: boolean): void {
+    const room = this.rooms.get(roomId);
+    const extended = this.extendedState.get(roomId);
+    if (!room || !extended) return;
+
+    for (const player of room.players) {
+      const stats = this.getOrCreateAgentStats(player.address);
+      stats.gamesPlayed++;
+
+      const isImpostor = extended.impostors.has(player.address.toLowerCase());
+
+      if (isImpostor) {
+        stats.timesImpostor++;
+        if (!crewmatesWon) {
+          stats.wins++;
+        } else {
+          stats.losses++;
+        }
+      } else {
+        stats.timesCrewmate++;
+        stats.tasksCompleted += player.tasksCompleted;
+        if (crewmatesWon) {
+          stats.wins++;
+        } else {
+          stats.losses++;
+        }
+      }
+    }
+
+    logger.info(`Game stats recorded for ${room.players.length} players in room ${roomId}`);
+    this.broadcastLeaderboard();
+  }
+
+  getLeaderboard(limit: number = 10): AgentStats[] {
+    const allStats = Array.from(this.agentStats.values());
+
+    // Sort by wins, then by win rate, then by games played
+    allStats.sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      const aWinRate = a.gamesPlayed > 0 ? a.wins / a.gamesPlayed : 0;
+      const bWinRate = b.gamesPlayed > 0 ? b.wins / b.gamesPlayed : 0;
+      if (bWinRate !== aWinRate) return bWinRate - aWinRate;
+      return b.gamesPlayed - a.gamesPlayed;
+    });
+
+    return allStats.slice(0, limit);
+  }
+
+  private broadcastLeaderboard(): void {
+    const leaderboard = this.getLeaderboard(10);
+    const message: ServerMessage = {
+      type: "server:leaderboard",
+      agents: leaderboard,
+      timestamp: Date.now(),
+    };
+    for (const client of this.clients.values()) {
+      this.send(client, message);
+    }
+  }
+
+  // Delete a room manually (for admin purposes or cleanup)
+  deleteRoom(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    // Clear any timers
+    const extended = this.extendedState.get(roomId);
+    if (extended?.phaseTimer) {
+      clearTimeout(extended.phaseTimer);
+    }
+
+    // Notify all clients in the room
+    this.broadcastToRoom(roomId, {
+      type: "server:error",
+      code: "ROOM_DELETED",
+      message: "Room has been deleted",
+    });
+
+    // Remove all clients from the room
+    for (const player of room.players) {
+      const client = this.findClientByAddress(player.address);
+      if (client) {
+        client.roomId = undefined;
+      }
+    }
+    for (const specId of room.spectators) {
+      const client = this.clients.get(specId);
+      if (client) {
+        client.roomId = undefined;
+      }
+    }
+
+    this.rooms.delete(roomId);
+    this.extendedState.delete(roomId);
+    this.broadcastRoomList();
+    logger.info(`Room ${roomId} manually deleted`);
+    return true;
+  }
+
+  // ============ OPERATOR / PRIVY HANDLERS ============
+
+  private async handleCreateAgent(client: Client, operatorKey: string): Promise<void> {
+    if (!privyWalletService.isEnabled()) {
+      this.send(client, {
+        type: "server:agent_created",
+        success: false,
+        error: "Privy wallet service not configured. Set PRIVY_APP_ID and PRIVY_APP_SECRET.",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // Validate operator key format
+    if (!operatorKey || !operatorKey.startsWith("oper_")) {
+      this.send(client, {
+        type: "server:agent_created",
+        success: false,
+        error: "Invalid operator key format. Must start with 'oper_'",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    try {
+      const result = await privyWalletService.createAgentWallet(operatorKey);
+
+      if (result) {
+        this.send(client, {
+          type: "server:agent_created",
+          success: true,
+          agentAddress: result.address,
+          userId: result.userId,
+          timestamp: Date.now(),
+        });
+        logger.info(`Agent wallet created for operator ${operatorKey}: ${result.address}`);
+      } else {
+        this.send(client, {
+          type: "server:agent_created",
+          success: false,
+          error: "Failed to create agent wallet",
+          timestamp: Date.now(),
+        });
+      }
+    } catch (error) {
+      logger.error("Error creating agent wallet:", error);
+      this.send(client, {
+        type: "server:agent_created",
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  private handleListAgents(client: Client, operatorKey: string): void {
+    // Validate operator key format
+    if (!operatorKey || !operatorKey.startsWith("oper_")) {
+      this.send(client, {
+        type: "server:agent_list",
+        agents: [],
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const agents = privyWalletService.getAgentWalletsForOperator(operatorKey);
+
+    this.send(client, {
+      type: "server:agent_list",
+      agents: agents.map((a) => ({
+        address: a.address,
+        userId: a.userId,
+        createdAt: a.createdAt,
+      })),
+      timestamp: Date.now(),
+    });
   }
 }

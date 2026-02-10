@@ -1,3 +1,18 @@
+// ============ AGENT STATS ============
+
+export interface AgentStats {
+  address: string;
+  name: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  kills: number;           // Total kills as impostor
+  tasksCompleted: number;  // Total tasks completed as crewmate
+  timesImpostor: number;
+  timesCrewmate: number;
+  lastSeen: number;        // Timestamp
+}
+
 // ============ ENUMS (Mirror from game) ============
 
 export enum Role {
@@ -115,7 +130,9 @@ export type ClientMessage =
   | AgentVoteMessage
   | AgentTaskCompleteMessage
   | AgentReportBodyMessage
-  | OperatorWithdrawRequestMessage;
+  | OperatorWithdrawRequestMessage
+  | OperatorCreateAgentMessage
+  | OperatorListAgentsMessage;
 
 // Kept for backwards compat
 export type AgentMessage = ClientMessage;
@@ -233,6 +250,16 @@ export interface OperatorWithdrawRequestMessage {
   amount?: string;            // Amount in ether, or "max" for full balance
 }
 
+export interface OperatorCreateAgentMessage {
+  type: "operator:create_agent";
+  operatorKey: string;        // oper_XXXXXXXXXXXX
+}
+
+export interface OperatorListAgentsMessage {
+  type: "operator:list_agents";
+  operatorKey: string;        // oper_XXXXXXXXXXXX
+}
+
 // Room state
 export interface RoomState {
   roomId: string;
@@ -251,6 +278,8 @@ export type ServerMessage =
   | ServerRoomCreatedMessage
   | ServerRoomListMessage
   | ServerRoomUpdateMessage
+  | ServerRoomAvailableMessage
+  | ServerLeaderboardMessage
   | ServerPlayerJoinedMessage
   | ServerPlayerLeftMessage
   | ServerPlayerMovedMessage
@@ -262,7 +291,9 @@ export type ServerMessage =
   | ServerTaskCompletedMessage
   | ServerGameEndedMessage
   | ServerBodyReportedMessage
-  | ServerWithdrawResultMessage;
+  | ServerWithdrawResultMessage
+  | ServerAgentCreatedMessage
+  | ServerAgentListMessage;
 
 export interface ServerWelcomeMessage {
   type: "server:welcome";
@@ -281,14 +312,58 @@ export interface ServerRoomCreatedMessage {
   room: RoomState;
 }
 
+export interface RoomSlotInfo {
+  id: number;
+  state: "active" | "cooldown" | "empty";
+  roomId: string | null;
+  cooldownEndTime: number | null;
+  cooldownRemaining: number | null;
+}
+
+export interface ServerStats {
+  connections: {
+    total: number;
+    agents: number;
+    spectators: number;
+  };
+  rooms: {
+    total: number;
+    maxRooms: number;
+    lobby: number;
+    playing: number;
+    totalPlayers: number;
+  };
+  limits: {
+    maxRooms: number;
+    maxPlayersPerRoom: number;
+    minPlayersToStart: number;
+    fillWaitDuration: number;
+    cooldownDuration: number;
+  };
+  slots: RoomSlotInfo[];
+}
+
 export interface ServerRoomListMessage {
   type: "server:room_list";
   rooms: RoomState[];
+  stats?: ServerStats;
 }
 
 export interface ServerRoomUpdateMessage {
   type: "server:room_update";
   room: RoomState;
+}
+
+export interface ServerRoomAvailableMessage {
+  type: "server:room_available";
+  roomId: string;
+  slotId: number;
+}
+
+export interface ServerLeaderboardMessage {
+  type: "server:leaderboard";
+  agents: AgentStats[];
+  timestamp: number;
 }
 
 export interface ServerPlayerJoinedMessage {
@@ -391,6 +466,25 @@ export interface ServerWithdrawResultMessage {
   agentAddress: string;
   txHash?: string;
   error?: string;
+  timestamp: number;
+}
+
+export interface ServerAgentCreatedMessage {
+  type: "server:agent_created";
+  success: boolean;
+  agentAddress?: string;
+  userId?: string;
+  error?: string;
+  timestamp: number;
+}
+
+export interface ServerAgentListMessage {
+  type: "server:agent_list";
+  agents: Array<{
+    address: string;
+    userId: string;
+    createdAt: number;
+  }>;
   timestamp: number;
 }
 
