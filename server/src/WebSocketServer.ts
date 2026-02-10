@@ -1249,6 +1249,16 @@ export class WebSocketRelayServer {
     return Array.from(this.rooms.values());
   }
 
+  // Get a specific room by ID
+  getRoom(roomId: string): RoomState | undefined {
+    return this.rooms.get(roomId);
+  }
+
+  // Get agent stats by address (for external access)
+  getAgentStats(address: string): AgentStats | undefined {
+    return this.agentStats.get(address.toLowerCase());
+  }
+
   // ============ AGENT STATS & LEADERBOARD ============
 
   private getOrCreateAgentStats(address: string, name?: string): AgentStats {
