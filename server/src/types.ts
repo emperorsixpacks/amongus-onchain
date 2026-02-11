@@ -137,7 +137,10 @@ export type ClientMessage =
   | AgentSubmitWagerMessage
   | AgentGetBalanceMessage
   | AgentCallMeetingMessage
-  | AgentChatMessage;
+  | AgentChatMessage
+  | AgentSabotageMessage
+  | AgentFixSabotageMessage
+  | AgentVentMessage;
 
 // Kept for backwards compat
 export type AgentMessage = ClientMessage;
@@ -275,6 +278,25 @@ export interface AgentChatMessage {
   message: string;
 }
 
+export interface AgentSabotageMessage {
+  type: "agent:sabotage";
+  gameId: string;
+  sabotageType: SabotageType;
+}
+
+export interface AgentFixSabotageMessage {
+  type: "agent:fix_sabotage";
+  gameId: string;
+  location: Location;
+}
+
+export interface AgentVentMessage {
+  type: "agent:vent";
+  gameId: string;
+  action: "enter" | "exit" | "move"; // enter vent, exit vent, or move between vents
+  targetLocation?: Location; // For "move" action - which vent to move to
+}
+
 // ============ OPERATOR MESSAGES ============
 
 export interface OperatorWithdrawRequestMessage {
@@ -337,7 +359,11 @@ export type ServerMessage =
   | ServerDepositConfirmedMessage
   | ServerPotUpdatedMessage
   | ServerMeetingCalledMessage
-  | ServerChatBroadcastMessage;
+  | ServerChatBroadcastMessage
+  | ServerSabotageStartedMessage
+  | ServerSabotageFixedMessage
+  | ServerSabotageFailedMessage
+  | ServerPlayerVentedMessage;
 
 export interface ServerWelcomeMessage {
   type: "server:welcome";
@@ -627,6 +653,43 @@ export interface ServerChatBroadcastMessage {
   senderName: string;
   message: string;
   isGhostChat: boolean; // True if from/to dead players only
+  timestamp: number;
+}
+
+export interface ServerSabotageStartedMessage {
+  type: "server:sabotage_started";
+  gameId: string;
+  sabotageType: SabotageType;
+  sabotager: string;
+  timeLimit: number; // Seconds until critical failure (0 if not critical)
+  fixLocations: Location[]; // Where to go to fix
+  timestamp: number;
+}
+
+export interface ServerSabotageFixedMessage {
+  type: "server:sabotage_fixed";
+  gameId: string;
+  sabotageType: SabotageType;
+  fixedBy: string;
+  location: Location;
+  timestamp: number;
+}
+
+export interface ServerSabotageFailedMessage {
+  type: "server:sabotage_failed";
+  gameId: string;
+  sabotageType: SabotageType;
+  reason: string; // "timeout" for critical sabotages
+  timestamp: number;
+}
+
+export interface ServerPlayerVentedMessage {
+  type: "server:player_vented";
+  gameId: string;
+  player: string;
+  action: "enter" | "exit" | "move";
+  fromLocation: Location;
+  toLocation?: Location; // For move action
   timestamp: number;
 }
 

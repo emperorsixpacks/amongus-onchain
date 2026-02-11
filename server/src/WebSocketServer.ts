@@ -9,6 +9,7 @@ import type {
   GamePhase,
   DeadBodyState,
   AgentStats,
+  SabotageType,
 } from "./types.js";
 import { createLogger } from "./logger.js";
 import { GameStateManager, WinConditionResult } from "./GameStateManager.js";
@@ -519,6 +520,18 @@ export class WebSocketRelayServer {
 
       case "agent:chat":
         this.handleChat(client, message.gameId, message.message);
+        break;
+
+      case "agent:sabotage":
+        this.handleSabotage(client, message.gameId, message.sabotageType);
+        break;
+
+      case "agent:fix_sabotage":
+        this.handleFixSabotage(client, message.gameId, message.location);
+        break;
+
+      case "agent:vent":
+        this.handleVent(client, message.gameId, message.action, message.targetLocation);
         break;
 
       default:
@@ -1310,6 +1323,350 @@ export class WebSocketRelayServer {
     logger.debug(`Chat in room ${roomId} from ${senderName}: ${sanitizedMessage.slice(0, 50)}...`);
   }
 
+  // ============ SABOTAGE SYSTEM ============
+
+  private handleSabotage(client: Client, roomId: string, sabotageType: SabotageType): void {
+    const room = this.rooms.get(roomId);
+    const extended = this.extendedState.get(roomId);
+    if (!room || !extended) return;
+
+    if (!client.address) {
+      this.send(client, {
+        type: "server:error",
+        code: "NOT_AUTHENTICATED",
+        message: "Must be authenticated to sabotage",
+      });
+      return;
+    }
+
+    // Only allow during ActionCommit phase
+    if (extended.currentPhase !== 2) {
+      this.send(client, {
+        type: "server:error",
+        code: "INVALID_PHASE",
+        message: "Can only sabotage during action phase",
+      });
+      return;
+    }
+
+    // Check if can sabotage
+    const canSabotage = this.gameStateManager.canSabotage(roomId, client.address);
+    if (!canSabotage.canSabotage) {
+      this.send(client, {
+        type: "server:error",
+        code: "CANNOT_SABOTAGE",
+        message: canSabotage.reason || "Cannot sabotage",
+      });
+      return;
+    }
+
+    // Get sabotage config
+    const config = this.gameStateManager.getSabotageConfig(sabotageType);
+    if (!config) {
+      this.send(client, {
+        type: "server:error",
+        code: "INVALID_SABOTAGE",
+        message: "Invalid sabotage type",
+      });
+      return;
+    }
+
+    // Start sabotage
+    const sabotage = this.gameStateManager.startSabotage(roomId, client.address, sabotageType);
+    if (!sabotage) {
+      this.send(client, {
+        type: "server:error",
+        code: "SABOTAGE_FAILED",
+        message: "Failed to start sabotage",
+      });
+      return;
+    }
+
+    // Broadcast sabotage started
+    this.broadcastToRoom(roomId, {
+      type: "server:sabotage_started",
+      gameId: roomId,
+      sabotageType,
+      sabotager: client.address,
+      timeLimit: config.timeLimit,
+      fixLocations: config.fixLocations as Location[],
+      timestamp: Date.now(),
+    });
+
+    logger.info(`Sabotage started in room ${roomId}: type ${sabotageType} by ${client.address}`);
+
+    // Set up critical sabotage timer
+    if (config.isCritical && config.timeLimit > 0) {
+      setTimeout(() => {
+        this.checkCriticalSabotage(roomId);
+      }, config.timeLimit * 1000);
+    }
+  }
+
+  private handleFixSabotage(client: Client, roomId: string, location: Location): void {
+    const room = this.rooms.get(roomId);
+    const extended = this.extendedState.get(roomId);
+    if (!room || !extended) return;
+
+    if (!client.address) {
+      this.send(client, {
+        type: "server:error",
+        code: "NOT_AUTHENTICATED",
+        message: "Must be authenticated to fix sabotage",
+      });
+      return;
+    }
+
+    // Only allow during ActionCommit phase
+    if (extended.currentPhase !== 2) {
+      this.send(client, {
+        type: "server:error",
+        code: "INVALID_PHASE",
+        message: "Can only fix sabotage during action phase",
+      });
+      return;
+    }
+
+    // Get player and verify they're alive and at the right location
+    const player = room.players.find(
+      p => p.address.toLowerCase() === client.address!.toLowerCase()
+    );
+    if (!player || !player.isAlive) {
+      this.send(client, {
+        type: "server:error",
+        code: "PLAYER_DEAD",
+        message: "Dead players cannot fix sabotage",
+      });
+      return;
+    }
+
+    if (player.location !== location) {
+      this.send(client, {
+        type: "server:error",
+        code: "WRONG_LOCATION",
+        message: "Must be at the fix location to repair sabotage",
+      });
+      return;
+    }
+
+    // Attempt to fix
+    const sabotage = this.gameStateManager.getActiveSabotage(roomId);
+    if (!sabotage) {
+      this.send(client, {
+        type: "server:error",
+        code: "NO_SABOTAGE",
+        message: "No active sabotage to fix",
+      });
+      return;
+    }
+
+    const result = this.gameStateManager.fixSabotage(roomId, client.address, location);
+
+    if (result.fixed) {
+      // Sabotage fully fixed
+      this.broadcastToRoom(roomId, {
+        type: "server:sabotage_fixed",
+        gameId: roomId,
+        sabotageType: sabotage.type as SabotageType,
+        fixedBy: client.address,
+        location,
+        timestamp: Date.now(),
+      });
+      logger.info(`Sabotage fixed in room ${roomId} by ${client.address}`);
+    } else if (result.partialFix) {
+      // Partial fix (e.g., for Reactor)
+      logger.debug(`Partial sabotage fix in room ${roomId} by ${client.address} at location ${location}`);
+    } else if (result.reason) {
+      this.send(client, {
+        type: "server:error",
+        code: "FIX_FAILED",
+        message: result.reason,
+      });
+    }
+  }
+
+  private checkCriticalSabotage(roomId: string): void {
+    const timedOut = this.gameStateManager.checkSabotageTimeout(roomId);
+    if (timedOut) {
+      const sabotage = this.gameStateManager.getActiveSabotage(roomId);
+      if (sabotage) {
+        // Impostors win by critical sabotage
+        this.broadcastToRoom(roomId, {
+          type: "server:sabotage_failed",
+          gameId: roomId,
+          sabotageType: sabotage.type as SabotageType,
+          reason: "timeout",
+          timestamp: Date.now(),
+        });
+        logger.info(`Critical sabotage timed out in room ${roomId} - Impostors win`);
+        this.endGame(roomId, false, "kills"); // Impostors win
+      }
+    }
+  }
+
+  // ============ VENT SYSTEM ============
+
+  private handleVent(client: Client, roomId: string, action: "enter" | "exit" | "move", targetLocation?: Location): void {
+    const room = this.rooms.get(roomId);
+    const extended = this.extendedState.get(roomId);
+    if (!room || !extended) return;
+
+    if (!client.address) {
+      this.send(client, {
+        type: "server:error",
+        code: "NOT_AUTHENTICATED",
+        message: "Must be authenticated to use vents",
+      });
+      return;
+    }
+
+    // Only allow during ActionCommit phase
+    if (extended.currentPhase !== 2) {
+      this.send(client, {
+        type: "server:error",
+        code: "INVALID_PHASE",
+        message: "Can only use vents during action phase",
+      });
+      return;
+    }
+
+    // Get player
+    const player = room.players.find(
+      p => p.address.toLowerCase() === client.address!.toLowerCase()
+    );
+    if (!player || !player.isAlive) {
+      this.send(client, {
+        type: "server:error",
+        code: "PLAYER_DEAD",
+        message: "Dead players cannot use vents",
+      });
+      return;
+    }
+
+    const currentLocation = player.location;
+
+    switch (action) {
+      case "enter": {
+        const canEnter = this.gameStateManager.canEnterVent(roomId, client.address, currentLocation);
+        if (!canEnter.canEnter) {
+          this.send(client, {
+            type: "server:error",
+            code: "CANNOT_VENT",
+            message: canEnter.reason || "Cannot enter vent",
+          });
+          return;
+        }
+
+        this.gameStateManager.enterVent(roomId, client.address);
+
+        // Broadcast to impostors and spectators only
+        this.broadcastVentAction(roomId, client.address, "enter", currentLocation);
+        logger.info(`Player ${client.address} entered vent at ${currentLocation} in room ${roomId}`);
+        break;
+      }
+
+      case "exit": {
+        if (!this.gameStateManager.isInVent(roomId, client.address)) {
+          this.send(client, {
+            type: "server:error",
+            code: "NOT_IN_VENT",
+            message: "Not currently in a vent",
+          });
+          return;
+        }
+
+        this.gameStateManager.exitVent(roomId, client.address);
+
+        // Broadcast to impostors and spectators only
+        this.broadcastVentAction(roomId, client.address, "exit", currentLocation);
+        logger.info(`Player ${client.address} exited vent at ${currentLocation} in room ${roomId}`);
+        break;
+      }
+
+      case "move": {
+        if (!this.gameStateManager.isInVent(roomId, client.address)) {
+          this.send(client, {
+            type: "server:error",
+            code: "NOT_IN_VENT",
+            message: "Must be in a vent to move between vents",
+          });
+          return;
+        }
+
+        if (targetLocation === undefined) {
+          this.send(client, {
+            type: "server:error",
+            code: "NO_TARGET",
+            message: "Must specify target vent location",
+          });
+          return;
+        }
+
+        // Validate vent connection
+        const validation = this.gameStateManager.validateMovement(
+          roomId,
+          client.address,
+          currentLocation,
+          targetLocation,
+          true // isVent = true
+        );
+
+        if (!validation.valid) {
+          this.send(client, {
+            type: "server:error",
+            code: "INVALID_VENT",
+            message: validation.reason || "Cannot move to that vent",
+          });
+          return;
+        }
+
+        // Update player location
+        player.location = targetLocation;
+
+        // Broadcast to impostors and spectators only
+        this.broadcastVentAction(roomId, client.address, "move", currentLocation, targetLocation);
+        logger.info(`Player ${client.address} moved through vent from ${currentLocation} to ${targetLocation} in room ${roomId}`);
+        break;
+      }
+    }
+  }
+
+  private broadcastVentAction(
+    roomId: string,
+    player: string,
+    action: "enter" | "exit" | "move",
+    fromLocation: Location,
+    toLocation?: Location
+  ): void {
+    const room = this.rooms.get(roomId);
+    const extended = this.extendedState.get(roomId);
+    if (!room || !extended) return;
+
+    const message = {
+      type: "server:player_vented" as const,
+      gameId: roomId,
+      player,
+      action,
+      fromLocation,
+      toLocation,
+      timestamp: Date.now(),
+    };
+
+    // Only send to impostors and spectators (not crewmates)
+    for (const [clientId, targetClient] of this.clients) {
+      if (targetClient.roomId !== roomId) continue;
+
+      const isImpostor = targetClient.address &&
+        extended.impostors.has(targetClient.address.toLowerCase());
+      const isSpectator = !targetClient.address ||
+        !room.players.find(p => p.address.toLowerCase() === targetClient.address?.toLowerCase());
+
+      if (isImpostor || isSpectator) {
+        this.send(targetClient, message);
+      }
+    }
+  }
+
   // ============ PHASE MANAGEMENT ============
 
   private startDiscussionPhase(roomId: string): void {
@@ -1321,6 +1678,12 @@ export class WebSocketRelayServer {
     if (extended.phaseTimer) {
       clearTimeout(extended.phaseTimer);
     }
+
+    // Clear any active sabotage (meetings reset sabotages)
+    this.gameStateManager.clearSabotage(roomId);
+
+    // Force all players out of vents
+    this.gameStateManager.clearAllVents(roomId);
 
     const previousPhase = extended.currentPhase;
     extended.currentPhase = 4; // Discussion

@@ -13,6 +13,46 @@ const logger = createLogger("game-state-manager");
 // Game constants
 const KILL_COOLDOWN_ROUNDS = 2; // Impostors must wait 2 rounds between kills
 const MAX_EMERGENCY_MEETINGS_PER_PLAYER = 1; // Each player gets 1 emergency meeting
+const SABOTAGE_COOLDOWN_MS = 30000; // 30 seconds between sabotages
+
+// Sabotage configuration
+interface SabotageConfig {
+  isCritical: boolean;
+  timeLimit: number; // Seconds (0 = until fixed manually)
+  fixLocations: number[]; // Location enums
+  requiresMultipleFixes: boolean; // E.g., Reactor needs 2 players
+}
+
+const SABOTAGE_CONFIG: Record<number, SabotageConfig> = {
+  // SabotageType.Lights = 1
+  1: {
+    isCritical: false,
+    timeLimit: 0,
+    fixLocations: [3], // Electrical
+    requiresMultipleFixes: false,
+  },
+  // SabotageType.Reactor = 2
+  2: {
+    isCritical: true,
+    timeLimit: 45,
+    fixLocations: [8], // Reactor
+    requiresMultipleFixes: true, // Needs 2 players
+  },
+  // SabotageType.O2 = 3
+  3: {
+    isCritical: true,
+    timeLimit: 30,
+    fixLocations: [1, 8], // Admin, Reactor
+    requiresMultipleFixes: false, // Either location works
+  },
+  // SabotageType.Comms = 4
+  4: {
+    isCritical: false,
+    timeLimit: 0,
+    fixLocations: [1], // Admin
+    requiresMultipleFixes: false,
+  },
+};
 
 // Room adjacency map (The Skeld)
 // Location enum: Cafeteria=0, Admin=1, Storage=2, Electrical=3, MedBay=4, UpperEngine=5, LowerEngine=6, Security=7, Reactor=8
@@ -40,6 +80,15 @@ const VENT_CONNECTIONS: Map<number, number[]> = new Map([
   [6, [8, 5]],              // LowerEngine <-> Reactor, UpperEngine
 ]);
 
+// Sabotage state
+interface SabotageState {
+  type: number; // SabotageType enum
+  startTime: number;
+  endTime: number; // For critical sabotages
+  fixProgress: Map<number, string[]>; // location -> players who fixed at that location
+  sabotager: string;
+}
+
 // Internal game state tracking
 interface GameInternalState {
   impostors: Set<string>; // addresses of impostors
@@ -47,6 +96,9 @@ interface GameInternalState {
   taskLocations: Map<string, number[]>; // player -> assigned task locations
   lastKillRound: Map<string, number>; // impostor -> last round they killed
   emergencyMeetingsUsed: Map<string, number>; // player -> meetings used
+  activeSabotage: SabotageState | null; // current sabotage
+  lastSabotageTime: number; // timestamp of last sabotage
+  playersInVent: Set<string>; // players currently hiding in vents
 }
 
 export interface WinConditionResult {
@@ -84,6 +136,9 @@ export class GameStateManager {
         taskLocations: new Map(),
         lastKillRound: new Map(),
         emergencyMeetingsUsed: new Map(),
+        activeSabotage: null,
+        lastSabotageTime: 0,
+        playersInVent: new Set(),
       });
       logger.info(`Created new game state: ${gameId}`);
     }
@@ -597,6 +652,260 @@ export class GameStateManager {
 
     const meetingsUsed = internal.emergencyMeetingsUsed.get(playerAddress.toLowerCase()) ?? 0;
     return MAX_EMERGENCY_MEETINGS_PER_PLAYER - meetingsUsed;
+  }
+
+  // ============ SABOTAGE SYSTEM ============
+
+  /**
+   * Check if sabotage can be started
+   */
+  canSabotage(gameId: string, sabotagerAddress: string): { canSabotage: boolean; reason?: string; cooldownRemaining?: number } {
+    const internal = this.internalState.get(gameId);
+    if (!internal) {
+      return { canSabotage: false, reason: "Game not found" };
+    }
+
+    // Must be an impostor
+    if (!internal.impostors.has(sabotagerAddress.toLowerCase())) {
+      return { canSabotage: false, reason: "Only impostors can sabotage" };
+    }
+
+    // No active sabotage
+    if (internal.activeSabotage) {
+      return { canSabotage: false, reason: "A sabotage is already in progress" };
+    }
+
+    // Check cooldown
+    const now = Date.now();
+    const timeSinceLastSabotage = now - internal.lastSabotageTime;
+    if (timeSinceLastSabotage < SABOTAGE_COOLDOWN_MS) {
+      const cooldownRemaining = Math.ceil((SABOTAGE_COOLDOWN_MS - timeSinceLastSabotage) / 1000);
+      return { canSabotage: false, reason: `Sabotage on cooldown`, cooldownRemaining };
+    }
+
+    return { canSabotage: true };
+  }
+
+  /**
+   * Start a sabotage
+   */
+  startSabotage(gameId: string, sabotagerAddress: string, sabotageType: number): SabotageState | null {
+    const internal = this.internalState.get(gameId);
+    const game = this.games.get(gameId);
+    if (!internal || !game) return null;
+
+    const config = SABOTAGE_CONFIG[sabotageType];
+    if (!config) return null;
+
+    const now = Date.now();
+    const endTime = config.isCritical ? now + (config.timeLimit * 1000) : 0;
+
+    const sabotage: SabotageState = {
+      type: sabotageType,
+      startTime: now,
+      endTime,
+      fixProgress: new Map(),
+      sabotager: sabotagerAddress.toLowerCase(),
+    };
+
+    internal.activeSabotage = sabotage;
+    internal.lastSabotageTime = now;
+    game.activeSabotage = sabotageType;
+
+    logger.info(`Sabotage started in game ${gameId}: type ${sabotageType} by ${sabotagerAddress}`);
+    return sabotage;
+  }
+
+  /**
+   * Get sabotage configuration
+   */
+  getSabotageConfig(sabotageType: number): SabotageConfig | null {
+    return SABOTAGE_CONFIG[sabotageType] ?? null;
+  }
+
+  /**
+   * Get active sabotage
+   */
+  getActiveSabotage(gameId: string): SabotageState | null {
+    return this.internalState.get(gameId)?.activeSabotage ?? null;
+  }
+
+  /**
+   * Attempt to fix sabotage at a location
+   * Returns true if sabotage is now fully fixed
+   */
+  fixSabotage(gameId: string, playerAddress: string, location: number): { fixed: boolean; partialFix: boolean; reason?: string } {
+    const internal = this.internalState.get(gameId);
+    const game = this.games.get(gameId);
+    if (!internal || !game) {
+      return { fixed: false, partialFix: false, reason: "Game not found" };
+    }
+
+    const sabotage = internal.activeSabotage;
+    if (!sabotage) {
+      return { fixed: false, partialFix: false, reason: "No active sabotage" };
+    }
+
+    const config = SABOTAGE_CONFIG[sabotage.type];
+    if (!config) {
+      return { fixed: false, partialFix: false, reason: "Invalid sabotage type" };
+    }
+
+    // Check if this is a valid fix location
+    if (!config.fixLocations.includes(location)) {
+      return { fixed: false, partialFix: false, reason: "Cannot fix sabotage at this location" };
+    }
+
+    const playerKey = playerAddress.toLowerCase();
+
+    // Record this player's fix attempt at this location
+    if (!sabotage.fixProgress.has(location)) {
+      sabotage.fixProgress.set(location, []);
+    }
+    const fixersAtLocation = sabotage.fixProgress.get(location)!;
+    if (!fixersAtLocation.includes(playerKey)) {
+      fixersAtLocation.push(playerKey);
+    }
+
+    // Check if sabotage is fixed
+    let isFixed = false;
+
+    if (config.requiresMultipleFixes) {
+      // Reactor: need players at multiple fix points OR multiple players at same point
+      // For simplicity: need 2 different players to fix (at same location)
+      const totalFixers = new Set<string>();
+      for (const fixers of sabotage.fixProgress.values()) {
+        for (const fixer of fixers) {
+          totalFixers.add(fixer);
+        }
+      }
+      isFixed = totalFixers.size >= 2;
+    } else {
+      // Single fix needed at any valid location
+      isFixed = sabotage.fixProgress.size > 0;
+    }
+
+    if (isFixed) {
+      internal.activeSabotage = null;
+      game.activeSabotage = 0; // None
+      logger.info(`Sabotage fixed in game ${gameId}: type ${sabotage.type} by ${playerAddress}`);
+      return { fixed: true, partialFix: false };
+    }
+
+    return { fixed: false, partialFix: true };
+  }
+
+  /**
+   * Check if critical sabotage has timed out
+   */
+  checkSabotageTimeout(gameId: string): boolean {
+    const internal = this.internalState.get(gameId);
+    if (!internal?.activeSabotage) return false;
+
+    const sabotage = internal.activeSabotage;
+    const config = SABOTAGE_CONFIG[sabotage.type];
+
+    if (config?.isCritical && sabotage.endTime > 0 && Date.now() >= sabotage.endTime) {
+      return true; // Sabotage timed out - impostors win
+    }
+
+    return false;
+  }
+
+  /**
+   * Clear sabotage (e.g., when meeting is called)
+   */
+  clearSabotage(gameId: string): void {
+    const internal = this.internalState.get(gameId);
+    const game = this.games.get(gameId);
+    if (internal) {
+      internal.activeSabotage = null;
+    }
+    if (game) {
+      game.activeSabotage = 0;
+    }
+  }
+
+  // ============ VENT SYSTEM ============
+
+  /**
+   * Check if player can enter a vent at their current location
+   */
+  canEnterVent(gameId: string, playerAddress: string, location: Location): { canEnter: boolean; reason?: string } {
+    const internal = this.internalState.get(gameId);
+    if (!internal) {
+      return { canEnter: false, reason: "Game not found" };
+    }
+
+    const playerKey = playerAddress.toLowerCase();
+
+    // Must be an impostor
+    if (!internal.impostors.has(playerKey)) {
+      return { canEnter: false, reason: "Only impostors can use vents" };
+    }
+
+    // Must not already be in a vent
+    if (internal.playersInVent.has(playerKey)) {
+      return { canEnter: false, reason: "Already in a vent" };
+    }
+
+    // Check if location has a vent
+    const ventConnections = VENT_CONNECTIONS.get(location);
+    if (!ventConnections || ventConnections.length === 0) {
+      return { canEnter: false, reason: "No vent at this location" };
+    }
+
+    return { canEnter: true };
+  }
+
+  /**
+   * Enter a vent
+   */
+  enterVent(gameId: string, playerAddress: string): boolean {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return false;
+
+    internal.playersInVent.add(playerAddress.toLowerCase());
+    logger.info(`Player ${playerAddress} entered vent in game ${gameId}`);
+    return true;
+  }
+
+  /**
+   * Exit a vent
+   */
+  exitVent(gameId: string, playerAddress: string): boolean {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return false;
+
+    const playerKey = playerAddress.toLowerCase();
+    if (!internal.playersInVent.has(playerKey)) {
+      return false;
+    }
+
+    internal.playersInVent.delete(playerKey);
+    logger.info(`Player ${playerAddress} exited vent in game ${gameId}`);
+    return true;
+  }
+
+  /**
+   * Check if player is in a vent
+   */
+  isInVent(gameId: string, playerAddress: string): boolean {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return false;
+    return internal.playersInVent.has(playerAddress.toLowerCase());
+  }
+
+  /**
+   * Force all players out of vents (e.g., when meeting starts)
+   */
+  clearAllVents(gameId: string): string[] {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return [];
+
+    const playersInVent = Array.from(internal.playersInVent);
+    internal.playersInVent.clear();
+    return playersInVent;
   }
 
   // ============ VOTING SYSTEM ============
