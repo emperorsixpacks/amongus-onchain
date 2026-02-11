@@ -35,17 +35,18 @@ function PrivyConnectButton() {
 
   if (authenticated && walletAddress) {
     return (
-      <div className="flex items-center gap-2">
-        <div className="px-3 py-2 bg-green-600/80 rounded-lg border border-green-400">
+      <div className="flex items-center gap-3 bg-gray-800/60 backdrop-blur-sm rounded-xl px-2 py-2 border border-gray-700/50">
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           <span className="text-white font-mono text-sm">
             {truncateAddress(walletAddress)}
           </span>
         </div>
         <motion.button
-          className="px-3 py-2 bg-red-600/80 rounded-lg border border-red-400 text-white text-sm font-bold hover:bg-red-500/80 transition-colors"
+          className="px-3 py-1.5 bg-gray-700/80 rounded-lg text-gray-300 text-sm font-medium hover:bg-red-600/80 hover:text-white transition-all duration-200"
           onClick={() => logout()}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
           Disconnect
         </motion.button>
@@ -76,17 +77,18 @@ function WagmiConnectButton() {
 
   if (isConnected && address) {
     return (
-      <div className="flex items-center gap-2">
-        <div className="px-3 py-2 bg-green-600/80 rounded-lg border border-green-400">
+      <div className="flex items-center gap-3 bg-gray-800/60 backdrop-blur-sm rounded-xl px-2 py-2 border border-gray-700/50">
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           <span className="text-white font-mono text-sm">
             {truncateAddress(address)}
           </span>
         </div>
         <motion.button
-          className="px-3 py-2 bg-red-600/80 rounded-lg border border-red-400 text-white text-sm font-bold hover:bg-red-500/80 transition-colors"
+          className="px-3 py-1.5 bg-gray-700/80 rounded-lg text-gray-300 text-sm font-medium hover:bg-red-600/80 hover:text-white transition-all duration-200"
           onClick={() => disconnect()}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
           Disconnect
         </motion.button>

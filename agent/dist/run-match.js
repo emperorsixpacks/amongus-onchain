@@ -81,7 +81,10 @@ async function runMatch() {
         riskTolerance: 50,
         maxWagerPerGame: WAGER_AMOUNT,
         minBankroll: WAGER_AMOUNT * 2n,
-    }, config.crewmateStyle, config.impostorStyle));
+    }, {
+        crewmateStyle: config.crewmateStyle,
+        impostorStyle: config.impostorStyle,
+    }));
     // First agent creates the game
     console.log("Agent-Red creating game...");
     const { gameId, gameAddress } = await agents[0].createAndJoinGame(WAGER_AMOUNT);
