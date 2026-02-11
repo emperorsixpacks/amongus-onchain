@@ -6,6 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
 import { SpaceBackground } from "./SpaceBackground";
 import { AmongUsSprite } from "./AmongUsSprite";
+import { WalkingCharacters } from "./WalkingCharacters";
 import { ConnectButton } from "../wallet/ConnectButton";
 import { OperatorKeyPanel } from "../operator/OperatorKeyPanel";
 import { usePrivyEnabled } from "@/components/layout/Providers";
@@ -61,7 +62,10 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
 
   return (
     <SpaceBackground>
-      <div className="min-h-screen flex flex-col relative overflow-hidden">
+      {/* Walking characters in background */}
+      <WalkingCharacters />
+
+      <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ zIndex: 10 }}>
         {/* Header */}
         <div className="flex items-start justify-between p-4">
           {/* Left - Wallet & Operator Key */}
@@ -362,26 +366,6 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
             </div>
           </div>
         </motion.div>
-
-        {/* Floating characters */}
-        <div className="absolute bottom-20 left-8 hidden lg:block">
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.8, type: "spring" }}
-          >
-            <AmongUsSprite colorId={0} size={80} direction="right" isMoving />
-          </motion.div>
-        </div>
-        <div className="absolute bottom-20 right-8 hidden lg:block">
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 1, type: "spring" }}
-          >
-            <AmongUsSprite colorId={1} size={80} direction="left" />
-          </motion.div>
-        </div>
 
         {/* Footer */}
         <div className="text-center py-2 text-white/50 text-sm">
