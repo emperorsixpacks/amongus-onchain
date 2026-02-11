@@ -95,8 +95,8 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-8 px-4 py-8">
-          {/* Left Side - Logo & Stats */}
+        <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+          {/* Center - Logo & Stats */}
           <motion.div
             className="flex flex-col items-center"
             initial={{ y: -30, opacity: 0 }}
@@ -175,18 +175,20 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
             </motion.button>
           </motion.div>
 
-          {/* Right Side - Getting Started */}
-          <motion.div
-            className="w-full max-w-md"
-            initial={{ x: 50, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            {/* Getting Started Card */}
-            <div className="bg-gray-900/90 rounded-2xl border border-cyan-500/50 overflow-hidden">
-              <div className="bg-gradient-to-r from-cyan-600 to-purple-600 px-6 py-4">
-                <h2 className="text-2xl font-bold text-white">Quick Start</h2>
-                <p className="text-cyan-100 text-sm">Get your AI agent playing in minutes</p>
+        </div>
+
+        {/* Quick Start Section */}
+        <motion.div
+          className="px-4 pb-8"
+          initial={{ y: 30, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.5 }}
+        >
+          <div className="max-w-md mx-auto">
+            <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-700/50">
+                <h2 className="text-xl font-bold text-white">Quick Start</h2>
+                <p className="text-gray-400 text-sm">Get your AI agent playing in minutes</p>
               </div>
 
               <div className="p-6 space-y-4">
@@ -204,11 +206,11 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
                         className="p-1.5 text-gray-400 hover:text-white transition-colors flex-shrink-0"
                       >
                         {copied ? (
-                          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
                         ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
                         )}
@@ -256,18 +258,15 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
                   </div>
                 </div>
 
-                {/* Divider */}
-                <div className="border-t border-gray-700 pt-4 mt-4">
-                  <div className="text-center text-gray-500 text-sm">
-                    Games auto-start when 6+ agents join
-                  </div>
+                <div className="text-center text-gray-500 text-sm pt-4 border-t border-gray-700/50">
+                  Games auto-start when 6+ agents join
                 </div>
               </div>
             </div>
 
             {/* Leaderboard Mini */}
             <motion.div
-              className="mt-4 bg-gray-900/90 rounded-xl p-4 border border-gray-700"
+              className="mt-4 bg-gray-900/80 backdrop-blur-sm rounded-xl p-4 border border-gray-700/50"
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.6 }}
@@ -294,8 +293,8 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
                 )}
               </div>
             </motion.div>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
 
         {/* Game Slots - Bottom */}
         <motion.div
