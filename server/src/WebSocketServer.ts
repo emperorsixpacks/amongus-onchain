@@ -841,6 +841,27 @@ export class WebSocketRelayServer {
     if (!player) return;
 
     const previousLocation = player.location;
+
+    // Validate movement (skip if same location)
+    if (previousLocation !== location) {
+      const validation = this.gameStateManager.validateMovement(
+        roomId,
+        client.address!,
+        previousLocation,
+        location,
+        false // not a vent
+      );
+
+      if (!validation.valid) {
+        this.send(client, {
+          type: "server:error",
+          code: "INVALID_MOVE",
+          message: validation.reason || "Invalid movement",
+        });
+        return;
+      }
+    }
+
     player.location = location;
 
     this.broadcastToRoom(roomId, {
@@ -859,6 +880,27 @@ export class WebSocketRelayServer {
     const extended = this.extendedState.get(roomId);
     if (!room || !extended) return;
 
+    // Validate killer is an impostor
+    if (!this.gameStateManager.isImpostor(roomId, killer)) {
+      this.send(client, {
+        type: "server:error",
+        code: "KILL_NOT_IMPOSTOR",
+        message: "Only impostors can kill",
+      });
+      return;
+    }
+
+    // Check kill cooldown
+    if (!this.gameStateManager.canKill(roomId, killer, round)) {
+      const cooldown = this.gameStateManager.getKillCooldown(roomId, killer, round);
+      this.send(client, {
+        type: "server:error",
+        code: "KILL_COOLDOWN",
+        message: `Kill on cooldown. Wait ${cooldown} more round(s).`,
+      });
+      return;
+    }
+
     const victimPlayer = room.players.find((p) => p.address === victim);
     if (victimPlayer) {
       victimPlayer.isAlive = false;
@@ -872,6 +914,9 @@ export class WebSocketRelayServer {
       reported: false,
     };
     extended.deadBodies.push(body);
+
+    // Record kill for cooldown tracking
+    this.gameStateManager.recordKill(roomId, killer, round);
 
     this.broadcastToRoom(roomId, {
       type: "server:kill_occurred",
@@ -1052,7 +1097,34 @@ export class WebSocketRelayServer {
 
     // Only allow during ActionCommit phase
     if (extended.currentPhase !== 2) {
-      logger.warn(`Body report rejected: not in ActionCommit phase`);
+      this.send(client, {
+        type: "server:error",
+        code: "INVALID_PHASE",
+        message: "Can only report bodies during action phase",
+      });
+      return;
+    }
+
+    // Validate reporter is alive
+    const reporterPlayer = room.players.find(
+      p => p.address.toLowerCase() === reporter.toLowerCase()
+    );
+    if (!reporterPlayer || !reporterPlayer.isAlive) {
+      this.send(client, {
+        type: "server:error",
+        code: "REPORTER_DEAD",
+        message: "Dead players cannot report bodies",
+      });
+      return;
+    }
+
+    // Validate reporter is at the body location
+    if (reporterPlayer.location !== bodyLocation) {
+      this.send(client, {
+        type: "server:error",
+        code: "NOT_AT_BODY",
+        message: "You must be at the body's location to report it",
+      });
       return;
     }
 
@@ -1062,7 +1134,11 @@ export class WebSocketRelayServer {
     );
 
     if (!body) {
-      logger.warn(`No unreported body at location ${bodyLocation}`);
+      this.send(client, {
+        type: "server:error",
+        code: "NO_BODY",
+        message: "No unreported body at this location",
+      });
       return;
     }
 
@@ -1291,12 +1367,23 @@ export class WebSocketRelayServer {
 
     // Impostors win if they equal or outnumber crewmates
     if (aliveImpostors.length >= aliveCrewmates.length && aliveCrewmates.length > 0) {
+      logger.info(`Win condition: Impostors (${aliveImpostors.length}) >= Crewmates (${aliveCrewmates.length})`);
       return { winner: "impostors", reason: "kills" };
     }
 
     // Crewmates win if all impostors are ejected
     if (aliveImpostors.length === 0) {
+      logger.info(`Win condition: All impostors eliminated`);
       return { winner: "crewmates", reason: "votes" };
+    }
+
+    // Crewmates win if all tasks are completed
+    const totalTasksCompleted = room.players.reduce((sum, p) => sum + p.tasksCompleted, 0);
+    const totalTasksRequired = room.players.reduce((sum, p) => sum + p.totalTasks, 0);
+
+    if (totalTasksRequired > 0 && totalTasksCompleted >= totalTasksRequired) {
+      logger.info(`Win condition: All tasks completed (${totalTasksCompleted}/${totalTasksRequired})`);
+      return { winner: "crewmates", reason: "tasks" };
     }
 
     return { winner: null };

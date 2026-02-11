@@ -1,20 +1,50 @@
-import type {
-  GameStateSnapshot,
-  PlayerState,
-  DeadBodyState,
-  GamePhase,
+import {
+  type GameStateSnapshot,
+  type PlayerState,
+  type DeadBodyState,
+  type GamePhase,
   Location,
-  SabotageType,
+  type SabotageType,
 } from "./types.js";
 import { createLogger } from "./logger.js";
 
 const logger = createLogger("game-state-manager");
+
+// Game constants
+const KILL_COOLDOWN_ROUNDS = 2; // Impostors must wait 2 rounds between kills
+
+// Room adjacency map (The Skeld)
+// Location enum: Cafeteria=0, Admin=1, Storage=2, Electrical=3, MedBay=4, UpperEngine=5, LowerEngine=6, Security=7, Reactor=8
+const ROOM_ADJACENCY: Map<number, number[]> = new Map([
+  [0, [1, 2, 4, 5]],       // Cafeteria -> Admin, Storage, MedBay, UpperEngine
+  [1, [0, 2]],              // Admin -> Cafeteria, Storage
+  [2, [0, 1, 3, 6]],        // Storage -> Cafeteria, Admin, Electrical, LowerEngine
+  [3, [2, 6]],              // Electrical -> Storage, LowerEngine
+  [4, [0, 5]],              // MedBay -> Cafeteria, UpperEngine
+  [5, [0, 4, 8]],           // UpperEngine -> Cafeteria, MedBay, Reactor
+  [6, [2, 3, 8]],           // LowerEngine -> Storage, Electrical, Reactor
+  [7, [8]],                 // Security -> Reactor
+  [8, [5, 6, 7]],           // Reactor -> UpperEngine, LowerEngine, Security
+]);
+
+// Vent connections (for impostors) - locations connected by vents
+const VENT_CONNECTIONS: Map<number, number[]> = new Map([
+  [1, [0]],                 // Admin <-> Cafeteria
+  [0, [1]],                 // Cafeteria <-> Admin
+  [4, [3, 7]],              // MedBay <-> Electrical, Security
+  [3, [4, 7]],              // Electrical <-> MedBay, Security
+  [7, [4, 3]],              // Security <-> MedBay, Electrical
+  [8, [5, 6]],              // Reactor <-> UpperEngine, LowerEngine
+  [5, [8, 6]],              // UpperEngine <-> Reactor, LowerEngine
+  [6, [8, 5]],              // LowerEngine <-> Reactor, UpperEngine
+]);
 
 // Internal game state tracking
 interface GameInternalState {
   impostors: Set<string>; // addresses of impostors
   votes: Map<string, string | null>; // voter -> target (null = skip)
   taskLocations: Map<string, number[]>; // player -> assigned task locations
+  lastKillRound: Map<string, number>; // impostor -> last round they killed
 }
 
 export interface WinConditionResult {
@@ -50,6 +80,7 @@ export class GameStateManager {
         impostors: new Set(),
         votes: new Map(),
         taskLocations: new Map(),
+        lastKillRound: new Map(),
       });
       logger.info(`Created new game state: ${gameId}`);
     }
@@ -363,6 +394,145 @@ export class GameStateManager {
     return game.players.filter(
       p => p.isAlive && !internal.impostors.has(p.address.toLowerCase())
     ).length;
+  }
+
+  // ============ KILL COOLDOWN ============
+
+  /**
+   * Check if impostor can kill (cooldown elapsed)
+   */
+  canKill(gameId: string, killerAddress: string, currentRound: number): boolean {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return false;
+
+    const killerKey = killerAddress.toLowerCase();
+
+    // Must be an impostor
+    if (!internal.impostors.has(killerKey)) {
+      return false;
+    }
+
+    const lastKill = internal.lastKillRound.get(killerKey);
+    if (lastKill === undefined) {
+      // Never killed before, can kill
+      return true;
+    }
+
+    // Check if cooldown has elapsed
+    const roundsSinceKill = currentRound - lastKill;
+    return roundsSinceKill >= KILL_COOLDOWN_ROUNDS;
+  }
+
+  /**
+   * Record a kill for cooldown tracking
+   */
+  recordKill(gameId: string, killerAddress: string, currentRound: number): void {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return;
+
+    internal.lastKillRound.set(killerAddress.toLowerCase(), currentRound);
+    logger.debug(`Recorded kill by ${killerAddress} at round ${currentRound}`);
+  }
+
+  /**
+   * Get remaining cooldown rounds for an impostor
+   */
+  getKillCooldown(gameId: string, killerAddress: string, currentRound: number): number {
+    const internal = this.internalState.get(gameId);
+    if (!internal) return 0;
+
+    const lastKill = internal.lastKillRound.get(killerAddress.toLowerCase());
+    if (lastKill === undefined) return 0;
+
+    const roundsSinceKill = currentRound - lastKill;
+    const remaining = KILL_COOLDOWN_ROUNDS - roundsSinceKill;
+    return Math.max(0, remaining);
+  }
+
+  // ============ MOVEMENT VALIDATION ============
+
+  /**
+   * Check if movement between two locations is valid (adjacent rooms)
+   */
+  isValidMove(from: Location, to: Location): boolean {
+    if (from === to) return true; // Staying in place is valid
+
+    const adjacent = ROOM_ADJACENCY.get(from);
+    return adjacent?.includes(to) ?? false;
+  }
+
+  /**
+   * Check if vent movement is valid (for impostors)
+   */
+  isValidVent(from: Location, to: Location): boolean {
+    const connected = VENT_CONNECTIONS.get(from);
+    return connected?.includes(to) ?? false;
+  }
+
+  /**
+   * Get adjacent rooms from a location
+   */
+  getAdjacentRooms(location: Location): Location[] {
+    return (ROOM_ADJACENCY.get(location) ?? []) as Location[];
+  }
+
+  /**
+   * Get vent-connected rooms from a location
+   */
+  getVentConnections(location: Location): Location[] {
+    return (VENT_CONNECTIONS.get(location) ?? []) as Location[];
+  }
+
+  /**
+   * Validate player movement with full context
+   * Returns { valid: boolean, reason?: string }
+   */
+  validateMovement(
+    gameId: string,
+    playerAddress: string,
+    from: Location,
+    to: Location,
+    isVent: boolean = false
+  ): { valid: boolean; reason?: string } {
+    const game = this.games.get(gameId);
+    const internal = this.internalState.get(gameId);
+    if (!game || !internal) {
+      return { valid: false, reason: "Game not found" };
+    }
+
+    const player = game.players.find(
+      p => p.address.toLowerCase() === playerAddress.toLowerCase()
+    );
+    if (!player) {
+      return { valid: false, reason: "Player not in game" };
+    }
+
+    // Dead players (ghosts) can move anywhere
+    if (!player.isAlive) {
+      return { valid: true };
+    }
+
+    // Vent movement - only for impostors
+    if (isVent) {
+      if (!internal.impostors.has(playerAddress.toLowerCase())) {
+        return { valid: false, reason: "Only impostors can use vents" };
+      }
+      if (!this.isValidVent(from, to)) {
+        return { valid: false, reason: "No vent connection between these rooms" };
+      }
+      return { valid: true };
+    }
+
+    // Normal movement - must be adjacent
+    if (!this.isValidMove(from, to)) {
+      const adjacent = this.getAdjacentRooms(from);
+      return {
+        valid: false,
+        reason: `Cannot move from ${Location[from]} to ${Location[to]}. Adjacent rooms: ${adjacent.map(r => Location[r]).join(", ")}`,
+      };
+    }
+
+    return { valid: true };
   }
 
   // ============ VOTING SYSTEM ============
