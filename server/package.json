@@ -1,0 +1,51 @@
+{
+  "name": "@amongus/server",
+  "version": "1.0.0",
+  "description": "WebSocket relay server for Among Us On-Chain game",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "prisma generate && tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "simulate": "tsx src/simulate.ts",
+    "lint": "eslint src/**/*.ts",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "keywords": [
+    "among-us",
+    "websocket",
+    "relay-server",
+    "monad"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "@privy-io/node": "^0.8.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1",
+    "uuid": "^10.0.0",
+    "winston": "^3.14.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.12",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prisma": "^6.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

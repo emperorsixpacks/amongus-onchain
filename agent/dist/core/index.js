@@ -17,4 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./Agent.js"), exports);
 __exportStar(require("./GameObserver.js"), exports);
 __exportStar(require("./ActionSubmitter.js"), exports);
+__exportStar(require("./WebSocketClient.js"), exports);
+__exportStar(require("./HttpApiClient.js"), exports);
+__exportStar(require("./OperatorManager.js"), exports);
 //# sourceMappingURL=index.js.map

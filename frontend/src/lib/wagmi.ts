@@ -1,5 +1,6 @@
 import { http, createConfig } from "wagmi";
 import { defineChain } from "viem";
+import { injected } from "wagmi/connectors";
 
 // Define Monad Testnet
 export const monadTestnet = defineChain({
@@ -38,6 +39,9 @@ export const localhost = defineChain({
 
 export const config = createConfig({
   chains: [monadTestnet, localhost],
+  connectors: [
+    injected(),
+  ],
   transports: {
     [monadTestnet.id]: http(),
     [localhost.id]: http(),

@@ -12,20 +12,24 @@ const ActionSubmitter_js_1 = require("./ActionSubmitter.js");
 const GameMemory_js_1 = require("../memory/GameMemory.js");
 const CrewmateStrategy_js_1 = require("../strategies/CrewmateStrategy.js");
 const ImpostorStrategy_js_1 = require("../strategies/ImpostorStrategy.js");
+const WebSocketClient_js_1 = require("./WebSocketClient.js");
 class Agent {
     config;
     observer;
     submitter;
     memory;
     logger;
+    wsClient = null;
     currentGameId = null;
     currentGameAddress = null;
     myRole = types_js_1.Role.None;
     strategy = null;
     pendingCommitment = null;
+    lastPhase = null;
     crewmateStyle;
     impostorStyle;
-    constructor(config, crewmateStyle = "task-focused", impostorStyle = "stealth") {
+    constructor(config, options = {}) {
+        const { crewmateStyle = "task-focused", impostorStyle = "stealth", wsServerUrl, } = options;
         this.config = config;
         this.observer = new GameObserver_js_1.GameObserver(config.rpcUrl, config.factoryAddress);
         this.submitter = new ActionSubmitter_js_1.ActionSubmitter(config.privateKey, config.rpcUrl, config.factoryAddress);
@@ -39,6 +43,32 @@ class Agent {
             })),
             transports: [new winston_1.default.transports.Console()],
         });
+        // Initialize WebSocket client if server URL provided
+        if (wsServerUrl) {
+            this.wsClient = new WebSocketClient_js_1.WebSocketClient({
+                serverUrl: wsServerUrl,
+                agentAddress: this.submitter.address,
+                agentName: config.agentName,
+            }, this.logger);
+        }
+    }
+    /**
+     * Connect to WebSocket server (call before joining game)
+     */
+    async connectWebSocket() {
+        if (this.wsClient) {
+            await this.wsClient.connect();
+            this.logger.info("WebSocket connected");
+        }
+    }
+    /**
+     * Disconnect from WebSocket server
+     */
+    disconnectWebSocket() {
+        if (this.wsClient) {
+            this.wsClient.disconnect();
+            this.logger.info("WebSocket disconnected");
+        }
     }
     get address() {
         return this.submitter.address;
@@ -67,7 +97,7 @@ class Agent {
         this.setGame(result.gameId, result.gameAddress);
         return { gameId: result.gameId, gameAddress: result.gameAddress };
     }
-    setGame(gameId, gameAddress) {
+    setGame(gameId, gameAddress, colorId = 0) {
         this.currentGameId = gameId;
         this.currentGameAddress = gameAddress;
         this.observer.setGame(gameAddress, gameId);
@@ -76,7 +106,12 @@ class Agent {
         this.myRole = types_js_1.Role.None;
         this.strategy = null;
         this.pendingCommitment = null;
+        this.lastPhase = null;
         this.logger.info(`Set active game: ${gameId} at ${gameAddress}`);
+        // Join WebSocket game room
+        if (this.wsClient) {
+            this.wsClient.joinGame(gameId, colorId);
+        }
     }
     async startGame() {
         this.logger.info("Starting game...");
@@ -92,8 +127,17 @@ class Agent {
             try {
                 const gameState = await this.observer.getGameState();
                 this.memory.setCurrentRound(gameState.round);
+                // Broadcast phase change via WebSocket
+                if (this.lastPhase !== gameState.phase) {
+                    this.broadcastPhaseChange(gameState);
+                    this.lastPhase = gameState.phase;
+                }
                 if (gameState.phase === types_js_1.GamePhase.Ended) {
                     this.logger.info(`Game ended! Crewmates won: ${gameState.crewmatesWon}`);
+                    // Leave WebSocket game room
+                    if (this.wsClient) {
+                        this.wsClient.leaveGame();
+                    }
                     break;
                 }
                 await this.handlePhase(gameState);
@@ -104,6 +148,14 @@ class Agent {
                 this.logger.error(`Error in game loop: ${error}`);
                 await this.sleep(2000);
             }
+        }
+    }
+    /**
+     * Broadcast phase change to WebSocket server
+     */
+    broadcastPhaseChange(gameState) {
+        if (this.wsClient) {
+            this.wsClient.sendPhaseChange(gameState.phase, gameState.round, gameState.phaseEndTime);
         }
     }
     async handlePhase(gameState) {
@@ -170,12 +222,29 @@ class Agent {
             this.logger.error("No pending commitment to reveal!");
             return;
         }
+        const revealedAction = this.pendingCommitment.action;
         // Reveal action
         await this.submitter.revealAction(this.pendingCommitment);
-        this.logger.info(`Revealed action: ${JSON.stringify(this.pendingCommitment.action)}`);
+        this.logger.info(`Revealed action: ${JSON.stringify(revealedAction)}`);
         // Update memory
         const myPlayer = await this.observer.getPlayer(this.address);
         this.memory.setMyLocation(myPlayer.location);
+        // Send action result to WebSocket server
+        if (this.wsClient) {
+            this.wsClient.sendActionResult(revealedAction, gameState.round);
+            // If it was a move, also send position update
+            if (revealedAction.type === types_js_1.ActionType.Move && revealedAction.destination !== undefined) {
+                this.wsClient.sendPositionUpdate(revealedAction.destination, gameState.round);
+            }
+            // If it was a kill, notify the server
+            if (revealedAction.type === types_js_1.ActionType.Kill && revealedAction.target) {
+                this.wsClient.sendKill(this.address, revealedAction.target, myPlayer.location, gameState.round);
+            }
+            // If it was a task, notify the server
+            if (revealedAction.type === types_js_1.ActionType.DoTask) {
+                this.wsClient.sendTaskComplete(this.address, myPlayer.tasksCompleted, myPlayer.totalTasks);
+            }
+        }
         this.pendingCommitment = null;
     }
     async handleDiscussion(gameState) {
@@ -222,6 +291,10 @@ class Agent {
         this.logger.info(`Voting for: ${voteTarget || "SKIP"}`);
         // Submit vote
         await this.submitter.submitVote(voteTarget);
+        // Send vote to WebSocket server
+        if (this.wsClient) {
+            this.wsClient.sendVote(this.address, voteTarget, gameState.round);
+        }
     }
     // ============ HELPERS ============
     async initializeRoleAndStrategy() {

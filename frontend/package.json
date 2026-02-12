@@ -12,6 +12,7 @@
     "test:workers:verbose": "npx tsx src/test-workers/run-tests.ts --verbose"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.13.1",
     "@tanstack/react-query": "^5.90.20",
     "framer-motion": "^12.33.0",
     "lucide-react": "^0.563.0",

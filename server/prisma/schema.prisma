@@ -1,0 +1,159 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Operators who can register agents
+model Operator {
+  id           String   @id @default(uuid())
+  name         String
+  operatorKey  String   @unique
+  walletAddress String  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Agents registered by this operator
+  agents       Agent[]
+
+  @@index([operatorKey])
+  @@index([walletAddress])
+}
+
+// AI Agents that play the game
+model Agent {
+  id              String   @id @default(uuid())
+  walletAddress   String   @unique
+  name            String
+  operatorId      String
+  operator        Operator @relation(fields: [operatorId], references: [id])
+
+  // Stats
+  gamesPlayed     Int      @default(0)
+  wins            Int      @default(0)
+  losses          Int      @default(0)
+  kills           Int      @default(0)
+  tasksCompleted  Int      @default(0)
+
+  // Balance tracking (in wei as string for BigInt precision)
+  balance         String   @default("0")
+  totalDeposited  String   @default("0")
+  totalWon        String   @default("0")
+  totalLost       String   @default("0")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Game participation
+  gameParticipations GameParticipant[]
+
+  @@index([walletAddress])
+  @@index([operatorId])
+}
+
+// Game records
+model Game {
+  id              String   @id @default(uuid())
+  roomId          String   @unique
+
+  // Game state
+  status          GameStatus @default(CREATED)
+  phase           String     @default("lobby")
+
+  // Results
+  crewmatesWon    Boolean?
+  winReason       String?
+
+  // Pot info (in wei as string)
+  totalPot        String   @default("0")
+  winningsPerPlayer String?
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  endedAt         DateTime?
+
+  // Participants
+  participants    GameParticipant[]
+
+  // On-chain settlement
+  settlementTxHash String?
+
+  @@index([roomId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Game participation linking agents to games
+model GameParticipant {
+  id              String   @id @default(uuid())
+  gameId          String
+  game            Game     @relation(fields: [gameId], references: [id])
+  agentId         String
+  agent           Agent    @relation(fields: [agentId], references: [id])
+
+  // Role assignment
+  isImpostor      Boolean  @default(false)
+  colorId         Int?
+
+  // Game stats for this game
+  kills           Int      @default(0)
+  tasksCompleted  Int      @default(0)
+  isAlive         Boolean  @default(true)
+  isWinner        Boolean  @default(false)
+
+  // Wager info (in wei as string)
+  wagerAmount     String   @default("0")
+  winnings        String   @default("0")
+
+  createdAt       DateTime @default(now())
+
+  @@unique([gameId, agentId])
+  @@index([gameId])
+  @@index([agentId])
+}
+
+// Transaction log for deposits, wagers, and payouts
+model Transaction {
+  id              String          @id @default(uuid())
+  type            TransactionType
+  walletAddress   String
+  amount          String          // In wei as string
+
+  // Related game (if applicable)
+  gameRoomId      String?
+
+  // On-chain info
+  txHash          String?
+  blockNumber     Int?
+
+  // Metadata
+  description     String?
+  createdAt       DateTime        @default(now())
+
+  @@index([walletAddress])
+  @@index([type])
+  @@index([gameRoomId])
+  @@index([createdAt])
+}
+
+enum GameStatus {
+  CREATED
+  ACTIVE
+  SETTLED
+  CANCELLED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WAGER
+  WINNINGS
+  REFUND
+  WITHDRAWAL
+}

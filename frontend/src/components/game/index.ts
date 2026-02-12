@@ -26,4 +26,3 @@ export { VotingScreen } from "./VotingScreen";
 export { FullMap } from "./FullMap";
 export { RoomView } from "./RoomView";
 export { ScrollableMap } from "./ScrollableMap";
-export { LobbyScreen } from "./LobbyScreen";
