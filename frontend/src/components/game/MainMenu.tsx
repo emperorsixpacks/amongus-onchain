@@ -27,12 +27,14 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
   const [copied, setCopied] = useState(false);
   const privyEnabled = usePrivyEnabled();
 
-  // Privy state (only valid when Privy is enabled)
-  const privyResult = usePrivy();
-  const { ready: privyReady, authenticated, user } = privyResult;
-
-  // Wagmi state (fallback when Privy is not enabled)
+  // Wagmi state (always available)
   const { isConnected: wagmiConnected } = useAccount();
+
+  // Privy state (only use when Privy is enabled)
+  const privyResult = usePrivy();
+  const privyReady = privyEnabled ? privyResult.ready : false;
+  const authenticated = privyEnabled ? privyResult.authenticated : false;
+  const user = privyEnabled ? privyResult.user : null;
 
   // Determine wallet connection status based on which provider is active
   const isWalletConnected = privyEnabled
@@ -43,12 +45,6 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
   const activeRooms = rooms.filter(r => r.phase === "playing");
   const totalPlayersInGame = rooms.reduce((sum, r) => sum + r.players.length, 0);
   const totalAgents = stats?.connections.agents ?? 0;
-
-  // Calculate win rate for display
-  const getWinRate = (agent: AgentStats) => {
-    if (agent.gamesPlayed === 0) return 0;
-    return Math.round((agent.wins / agent.gamesPlayed) * 100);
-  };
 
   const copySkillUrl = async () => {
     try {
@@ -79,9 +75,9 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
             <OperatorKeyPanel />
           </motion.div>
 
-          {/* Right - Monad badge + Connection */}
+          {/* Right - Connection + Top Agents */}
           <motion.div
-            className="flex items-center gap-3"
+            className="flex flex-col items-end gap-3"
             initial={{ x: 50, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ delay: 0.5 }}
@@ -91,6 +87,37 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
               <span className={`text-sm ${isConnected ? "text-green-400" : "text-red-400"}`}>
                 {isConnected ? "Live" : "Offline"}
               </span>
+            </div>
+
+            {/* Top Agents Leaderboard */}
+            <div className="bg-gray-900/80 backdrop-blur-sm rounded-xl p-4 min-w-[280px] border border-gray-700/50">
+              <h3 className="text-cyan-400 font-bold text-lg mb-3 text-center">Top Agents</h3>
+              <table className="w-full">
+                <thead>
+                  <tr className="text-gray-400 text-sm">
+                    <th className="text-left font-medium pb-2">#</th>
+                    <th className="text-left font-medium pb-2">Name</th>
+                    <th className="text-right font-medium pb-2">Wins</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="text-gray-500 text-sm text-center py-4">
+                        No agents yet
+                      </td>
+                    </tr>
+                  ) : (
+                    leaderboard.slice(0, 10).map((agent, i) => (
+                      <tr key={agent.address} className="text-gray-200">
+                        <td className="py-1 text-gray-400">{i + 1}</td>
+                        <td className="py-1 font-medium">{agent.name}</td>
+                        <td className="py-1 text-right text-green-400">{agent.wins}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </motion.div>
         </div>
@@ -265,35 +292,6 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
               </div>
             </div>
 
-            {/* Leaderboard Mini */}
-            <motion.div
-              className="mt-4 bg-gray-900/80 backdrop-blur-sm rounded-xl p-4 border border-gray-700/50"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.6 }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-cyan-400 font-bold text-sm uppercase tracking-wider">Top Agents</h3>
-                <span className="text-gray-500 text-xs">{leaderboard.reduce((sum, a) => sum + a.gamesPlayed, 0)} games</span>
-              </div>
-              <div className="space-y-2">
-                {leaderboard.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-2">No agents yet - be the first!</div>
-                ) : (
-                  leaderboard.slice(0, 3).map((agent, i) => (
-                    <div key={agent.address} className="flex items-center gap-3 text-sm">
-                      <span className={`w-5 font-bold ${i === 0 ? "text-yellow-400" : i === 1 ? "text-gray-400" : "text-amber-600"}`}>
-                        #{i + 1}
-                      </span>
-                      <AmongUsSprite colorId={i} size={24} />
-                      <span className="flex-1 text-gray-300 truncate">{agent.name}</span>
-                      <span className="text-green-400">{agent.wins}W</span>
-                      <span className="text-cyan-400">{getWinRate(agent)}%</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
           </div>
         </motion.div>
 

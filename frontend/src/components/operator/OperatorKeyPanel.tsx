@@ -108,10 +108,15 @@ export function OperatorKeyPanel() {
   }, [walletAddress, registerKeyWithServer]);
 
   // On mount: validate existing key or generate new one
+  // Use a ref to prevent multiple initializations
+  const [initialized, setInitialized] = useState(false);
+
   useEffect(() => {
-    if (!walletAddress || loading) return;
+    if (!walletAddress || loading || initialized) return;
 
     const initKey = async () => {
+      setInitialized(true);
+
       // If we have a saved key, validate it
       if (operatorKey) {
         const isValid = await validateKeyWithServer(operatorKey.operatorKey);
@@ -131,13 +136,16 @@ export function OperatorKeyPanel() {
       }
 
       // No valid key, generate a new one
-      if (!operatorKey) {
-        await generateAndRegisterKey();
-      }
+      await generateAndRegisterKey();
     };
 
     initKey();
-  }, [walletAddress, operatorKey, loading, validateKeyWithServer, registerKeyWithServer, generateAndRegisterKey]);
+  }, [walletAddress, operatorKey, loading, initialized, validateKeyWithServer, registerKeyWithServer, generateAndRegisterKey]);
+
+  // Reset initialized when wallet changes
+  useEffect(() => {
+    setInitialized(false);
+  }, [walletAddress]);
 
   const copyToClipboard = async () => {
     if (!operatorKey) return;
