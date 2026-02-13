@@ -367,42 +367,63 @@ export function createApiServer(wsServer: WebSocketRelayServer) {
   );
 
   // Deposit funds (for testing - in production this would be triggered by on-chain events)
-  app.post("/api/wager/deposit", async (req: Request, res: Response) => {
-    const { address, amount } = req.body;
+  app.post(
+    "/api/wager/deposit",
+    requireOperatorAuth as any,
+    async (req: AuthenticatedRequest, res: Response) => {
+      const { address, amount } = req.body;
+      const operator = req.operator;
 
-    if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-      res.status(400).json({ error: "Invalid wallet address" });
-      return;
-    }
-
-    if (!amount) {
-      res.status(400).json({ error: "Amount is required" });
-      return;
-    }
-
-    try {
-      const amountBigInt = BigInt(amount);
-      if (amountBigInt <= 0) {
-        res.status(400).json({ error: "Amount must be positive" });
+      if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+        res.status(400).json({ error: "Invalid wallet address" });
         return;
       }
 
-      await wagerService.deposit(address, amountBigInt);
+      if (!amount) {
+        res.status(400).json({ error: "Amount is required" });
+        return;
+      }
 
-      const newBalance = await wagerService.getBalance(address);
+      // Verify operator ownership
+      const isOwner = await privyWalletService.verifyOperatorOwnership(
+        operator!.operatorKey,
+        address,
+      );
+      if (!isOwner) {
+        res.status(401).json({
+          error: "Unauthorized: You do not own this agent wallet",
+        });
+        return;
+      }
 
-      res.json({
-        success: true,
-        address: address.toLowerCase(),
-        deposited: amount,
-        newBalance: newBalance.toString(),
-        newBalanceMON: Number(newBalance) / 1e18,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      res.status(400).json({ error: "Invalid amount format" });
-    }
-  });
+      try {
+        const amountBigInt = BigInt(amount);
+        if (amountBigInt <= 0) {
+          res.status(400).json({ error: "Amount must be positive" });
+          return;
+        }
+
+        const success = await wagerService.deposit(address, amountBigInt);
+        if (!success) {
+          res.status(500).json({ error: "Failed to process on-chain deposit" });
+          return;
+        }
+
+        const newBalance = await wagerService.getBalance(address);
+
+        res.json({
+          success: true,
+          address: address.toLowerCase(),
+          deposited: amount,
+          newBalance: newBalance.toString(),
+          newBalanceMON: Number(newBalance) / 1e18,
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        res.status(400).json({ error: "Invalid amount format" });
+      }
+    },
+  );
 
   // Get game pot info
   app.get(

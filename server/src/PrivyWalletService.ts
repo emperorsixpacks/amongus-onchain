@@ -1,4 +1,4 @@
-import { PrivyClient } from "@privy-io/node";
+import { PrivyClient, type AuthorizationContext } from "@privy-io/node";
 import { createLogger } from "./logger.js";
 import { databaseService } from "./DatabaseService.js";
 
@@ -7,6 +7,9 @@ const logger = createLogger("privy-wallet");
 // Privy configuration from environment
 const PRIVY_APP_ID = process.env.PRIVY_APP_ID || "";
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || "";
+
+const PRIVY_WALLET_AUTHORIZATION_KEY = process.env.PRIVY_WALLET_AUTHORIZATION_KEY || "";
+const PRIVY_WALLET_AUTHORIZATION_KEY_ID = process.env.PRIVY_WALLET_AUTHORIZATION_KEY_ID || "";
 
 interface AgentWallet {
   userId: string;       // Privy user ID
@@ -26,11 +29,18 @@ export class PrivyWalletService {
     if (PRIVY_APP_ID && PRIVY_APP_SECRET &&
       PRIVY_APP_ID !== "your-privy-app-id-here" &&
       PRIVY_APP_SECRET !== "your-privy-app-secret-here") {
-      this.client = new PrivyClient({
+
+      const config: any = {
         appId: PRIVY_APP_ID,
         appSecret: PRIVY_APP_SECRET,
-      });
+      };
+
+      this.client = new PrivyClient(config);
       logger.info("Privy wallet service initialized");
+
+      if (PRIVY_WALLET_AUTHORIZATION_KEY && !PRIVY_WALLET_AUTHORIZATION_KEY_ID) {
+        logger.warn("PRIVY_WALLET_AUTHORIZATION_KEY is set but PRIVY_WALLET_AUTHORIZATION_KEY_ID is missing. Server-side wallet signing will fail.");
+      }
     } else {
       logger.warn("Privy not configured - wallet creation disabled. Set PRIVY_APP_ID and PRIVY_APP_SECRET in .env");
     }
@@ -55,65 +65,41 @@ export class PrivyWalletService {
     }
 
     try {
-      // Create a new Privy user for this agent
-      // Using a custom identifier based on operator key
-      const customId = `agent_${operatorKey}_${Date.now()}`;
+      // Create a server-side managed wallet for this agent.
+      // This wallet is owned by the app's authorization key, allowing for autonomous signing.
+      const createOptions: any = {
+        chain_type: "ethereum",
+      };
 
-      // Create user with custom auth and an Ethereum wallet
-      const user = await this.client.users().create({
-        linked_accounts: [
-          {
-            type: "custom_auth",
-            custom_user_id: customId,
-          },
-        ],
-        wallets: [
-          {
-            chain_type: "ethereum",
-          },
-        ],
-      });
-
-      // Find the Ethereum embedded wallet in linked accounts
-      // The wallet type for embedded wallets is "ethereum_embedded_wallet"
-      let walletAddress: string | undefined;
-      let walletId: string | undefined;
-
-      for (const account of user.linked_accounts) {
-        if (account.type === "wallet" && "address" in account && account.chain_type === "ethereum") {
-          walletAddress = (account as any).address;
-          walletId = (account as any).id;
-          break;
-        }
+      // Associate wallet with authorization key so it can sign transactions
+      if (PRIVY_WALLET_AUTHORIZATION_KEY_ID) {
+        createOptions.authorization_key_ids = [PRIVY_WALLET_AUTHORIZATION_KEY_ID];
       }
 
-      if (!walletAddress || !walletId) {
-        logger.error("No Ethereum wallet created for agent");
-        return null;
-      }
+      const wallet = await this.client.wallets().create(createOptions);
 
-      const address = walletAddress.toLowerCase();
+      const address = wallet.address.toLowerCase();
+      const walletId = wallet.id;
 
       // Persist to database
-      // First get the operator ID if possible
       const operator = await databaseService.getOperatorByKey(operatorKey);
       if (operator) {
         databaseService.upsertAgent({
           walletAddress: address,
           name: `Agent ${address.substring(0, 6)}`,
           operatorId: operator.id,
-          privyUserId: user.id,
+          privyUserId: undefined, // Server-managed wallets don't necessarily have a user ID
           privyWalletId: walletId,
         });
       } else {
         logger.warn(`Operator ${operatorKey} not found in DB - agent wallet persisted in memory only`);
       }
 
-      logger.info(`Created agent wallet: ${address} (ID: ${walletId}) for operator: ${operatorKey}`);
+      logger.info(`Created server-side agent wallet: ${address} (ID: ${walletId}) for operator: ${operatorKey}`);
 
       return {
         address,
-        userId: user.id,
+        userId: "server-managed", // Using a placeholder for the return type
       };
     } catch (error) {
       logger.error("Failed to create agent wallet:", error);
@@ -126,12 +112,12 @@ export class PrivyWalletService {
    */
   async getAgentWallet(address: string): Promise<AgentWallet | undefined> {
     const agent = await databaseService.getAgentByWallet(address) as any;
-    if (!agent || !agent.privyUserId || !agent.privyWalletId) {
+    if (!agent || !agent.privyWalletId) {
       return undefined;
     }
 
     return {
-      userId: agent.privyUserId,
+      userId: agent.privyUserId || "server-managed",
       address: agent.walletAddress,
       walletId: agent.privyWalletId,
       operatorKey: agent.operator?.operatorKey || "unknown",
@@ -155,9 +141,9 @@ export class PrivyWalletService {
     if (!operator) return [];
 
     return (operator.agents as any[])
-      .filter(agent => agent.privyUserId && agent.privyWalletId)
+      .filter(agent => agent.privyWalletId)
       .map(agent => ({
-        userId: agent.privyUserId!,
+        userId: agent.privyUserId || "server-managed",
         address: agent.walletAddress,
         walletId: agent.privyWalletId!,
         operatorKey: operatorKey,
@@ -188,19 +174,19 @@ export class PrivyWalletService {
       return null;
     }
 
-    // Mock bypass for testing with dummy IDs
-    if (wallet.userId.startsWith("mock") || wallet.walletId.startsWith("mock")) {
-      logger.info(`Mocking transaction for test wallet ${address}`);
-      return `0x_mock_tx_${Date.now()}`;
-    }
     try {
       logger.info(`Sending transaction from agent ${address} to ${to}`);
 
       const chainId = parseInt(process.env.CHAIN_ID || "10143");
 
       // Correct API for server-side signing in @privy-io/node
+      const authorizationContext: AuthorizationContext = {
+        authorization_private_keys: [PRIVY_WALLET_AUTHORIZATION_KEY]
+      };
+
       const response = await this.client.wallets().ethereum().sendTransaction(wallet.walletId, {
         caip2: `eip155:${chainId}`,
+        authorization_context: authorizationContext,
         params: {
           transaction: {
             to,
@@ -209,7 +195,7 @@ export class PrivyWalletService {
             chain_id: chainId,
           }
         }
-      });
+      } as any);
 
       const hash = response.hash;
       logger.info(`Transaction sent! Hash: ${hash}`);
