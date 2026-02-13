@@ -288,6 +288,11 @@ export class ContractService {
       return "0x_mock_tx_hash";
     }
 
+    if (!privyWalletService.isEnabled()) {
+      logger.error("Cannot place on-chain wager: Privy not configured");
+      return null;
+    }
+
     try {
       const gameId = this.gameIdToBytes32(roomId);
       const data = this.wagerVault.interface.encodeFunctionData("placeWager", [gameId]);
@@ -312,6 +317,11 @@ export class ContractService {
    */
   async deposit(agentAddress: string, amount: bigint): Promise<string | null> {
     if (!this.enabled) return "0x_mock_tx_hash";
+
+    if (!privyWalletService.isEnabled()) {
+      logger.error("Cannot perform on-chain deposit: Privy not configured");
+      return null;
+    }
 
     try {
       // First check allowance
