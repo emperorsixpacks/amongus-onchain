@@ -109,21 +109,33 @@ export class DatabaseService {
   // ============ Operator Operations ============
 
   /**
-   * Create or update an operator
+   * Create or update an operator by wallet address
    */
-  upsertOperator(data: {
+  async upsertOperator(data: {
     name: string;
     operatorKey: string;
     walletAddress: string;
-  }): void {
-    this.queueWrite(async () => {
-      await this.prisma.operator.upsert({
-        where: { operatorKey: data.operatorKey },
-        update: { name: data.name, walletAddress: data.walletAddress },
-        create: data,
+  }) {
+    if (!this.enabled) return null;
+
+    try {
+      const result = await this.prisma.operator.upsert({
+        where: { walletAddress: data.walletAddress.toLowerCase() },
+        update: {
+          name: data.name,
+          operatorKey: data.operatorKey,
+        },
+        create: {
+          ...data,
+          walletAddress: data.walletAddress.toLowerCase(),
+        },
       });
-      logger.debug(`Upserted operator: ${data.name}`);
-    });
+      logger.debug(`Upserted operator: ${data.name} (${data.walletAddress})`);
+      return result;
+    } catch (error) {
+      logger.error("Failed to upsert operator:", error);
+      return null;
+    }
   }
 
   /**
@@ -235,17 +247,28 @@ export class DatabaseService {
       losses?: number;
       kills?: number;
       tasksCompleted?: number;
-    }
+    },
   ): void {
     this.queueWrite(async () => {
       await this.prisma.agent.update({
         where: { walletAddress: walletAddress.toLowerCase() },
         data: {
-          gamesPlayed: stats.gamesPlayed !== undefined ? { increment: stats.gamesPlayed } : undefined,
-          wins: stats.wins !== undefined ? { increment: stats.wins } : undefined,
-          losses: stats.losses !== undefined ? { increment: stats.losses } : undefined,
-          kills: stats.kills !== undefined ? { increment: stats.kills } : undefined,
-          tasksCompleted: stats.tasksCompleted !== undefined ? { increment: stats.tasksCompleted } : undefined,
+          gamesPlayed:
+            stats.gamesPlayed !== undefined
+              ? { increment: stats.gamesPlayed }
+              : undefined,
+          wins:
+            stats.wins !== undefined ? { increment: stats.wins } : undefined,
+          losses:
+            stats.losses !== undefined
+              ? { increment: stats.losses }
+              : undefined,
+          kills:
+            stats.kills !== undefined ? { increment: stats.kills } : undefined,
+          tasksCompleted:
+            stats.tasksCompleted !== undefined
+              ? { increment: stats.tasksCompleted }
+              : undefined,
         },
       });
       logger.debug(`Updated stats for agent: ${walletAddress}`);
@@ -258,7 +281,7 @@ export class DatabaseService {
   updateAgentBalance(
     walletAddress: string,
     balanceChange: bigint,
-    type: "deposit" | "wager" | "winnings" | "refund"
+    type: "deposit" | "wager" | "winnings" | "refund",
   ): void {
     this.queueWrite(async () => {
       const agent = await this.prisma.agent.findUnique({
@@ -278,11 +301,17 @@ export class DatabaseService {
       };
 
       if (type === "deposit") {
-        updateData.totalDeposited = (BigInt(agent.totalDeposited) + balanceChange).toString();
+        updateData.totalDeposited = (
+          BigInt(agent.totalDeposited) + balanceChange
+        ).toString();
       } else if (type === "winnings") {
-        updateData.totalWon = (BigInt(agent.totalWon) + balanceChange).toString();
+        updateData.totalWon = (
+          BigInt(agent.totalWon) + balanceChange
+        ).toString();
       } else if (type === "wager") {
-        updateData.totalLost = (BigInt(agent.totalLost) + (-balanceChange)).toString();
+        updateData.totalLost = (
+          BigInt(agent.totalLost) + -balanceChange
+        ).toString();
       }
 
       await this.prisma.agent.update({
@@ -290,7 +319,9 @@ export class DatabaseService {
         data: updateData,
       });
 
-      logger.debug(`Updated balance for ${walletAddress}: ${type} ${balanceChange.toString()}`);
+      logger.debug(
+        `Updated balance for ${walletAddress}: ${type} ${balanceChange.toString()}`,
+      );
     });
   }
 
@@ -347,7 +378,7 @@ export class DatabaseService {
       isImpostor: boolean;
       colorId?: number;
       wagerAmount: bigint;
-    }>
+    }>,
   ): void {
     this.queueWrite(async () => {
       const game = await this.prisma.game.findUnique({
@@ -390,7 +421,9 @@ export class DatabaseService {
         },
       });
 
-      logger.debug(`Started game: ${roomId} with ${participants.length} participants`);
+      logger.debug(
+        `Started game: ${roomId} with ${participants.length} participants`,
+      );
     });
   }
 
@@ -411,7 +444,7 @@ export class DatabaseService {
       }>;
       winningsPerPlayer: bigint;
       settlementTxHash?: string;
-    }
+    },
   ): void {
     this.queueWrite(async () => {
       const game = await this.prisma.game.findUnique({
@@ -427,7 +460,7 @@ export class DatabaseService {
       // Update participants
       for (const p of game.participants) {
         const stats = result.playerStats.find(
-          (s) => s.walletAddress.toLowerCase() === p.agent.walletAddress
+          (s) => s.walletAddress.toLowerCase() === p.agent.walletAddress,
         );
         const isWinner = result.winners
           .map((w) => w.toLowerCase())
@@ -471,7 +504,9 @@ export class DatabaseService {
         },
       });
 
-      logger.debug(`Ended game: ${roomId} - ${result.crewmatesWon ? "Crewmates" : "Impostors"} won`);
+      logger.debug(
+        `Ended game: ${roomId} - ${result.crewmatesWon ? "Crewmates" : "Impostors"} won`,
+      );
     });
   }
 
@@ -561,7 +596,9 @@ export class DatabaseService {
           description: data.description,
         },
       });
-      logger.debug(`Logged transaction: ${data.type} for ${data.walletAddress}`);
+      logger.debug(
+        `Logged transaction: ${data.type} for ${data.walletAddress}`,
+      );
     });
   }
 
