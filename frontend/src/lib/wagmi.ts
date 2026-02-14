@@ -2,10 +2,10 @@ import { http, createConfig } from "wagmi";
 import { defineChain } from "viem";
 import { injected } from "wagmi/connectors";
 
-// Define Monad Testnet
-export const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
+// Define Monad Mainnet
+export const monadMainnet = defineChain({
+  id: 143,
+  name: "Monad",
   nativeCurrency: {
     decimals: 18,
     name: "MON",
@@ -13,11 +13,11 @@ export const monadTestnet = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ["https://testnet-rpc.monad.xyz"],
+      http: ["https://rpc.monad.xyz"],
     },
   },
   blockExplorers: {
-    default: { name: "Monad Explorer", url: "https://testnet.monadexplorer.com" },
+    default: { name: "Monad Explorer", url: "https://monad.socialscan.io" },
   },
 });
 
@@ -38,12 +38,12 @@ export const localhost = defineChain({
 });
 
 export const config = createConfig({
-  chains: [monadTestnet, localhost],
+  chains: [monadMainnet, localhost],
   connectors: [
     injected(),
   ],
   transports: {
-    [monadTestnet.id]: http(),
+    [monadMainnet.id]: http(),
     [localhost.id]: http(),
   },
 });

@@ -28,12 +28,12 @@ import {
 } from "../types.js";
 
 // Define Monad chain (or local)
-const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
+const monadMainnet = defineChain({
+  id: 143,
+  name: "Monad",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://testnet-rpc.monad.xyz"] },
+    default: { http: ["https://rpc.monad.xyz"] },
   },
 });
 
@@ -60,7 +60,7 @@ export class ActionSubmitter {
     // Determine chain based on RPC URL
     this.chain = rpcUrl.includes("localhost") || rpcUrl.includes("127.0.0.1")
       ? localhost
-      : monadTestnet;
+      : monadMainnet;
 
     this.publicClient = createPublicClient({
       chain: this.chain,

@@ -1,8 +1,8 @@
 import { defineChain } from "viem";
 
-export const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
+export const monadMainnet = defineChain({
+  id: 143,
+  name: "Monad",
   nativeCurrency: {
     decimals: 18,
     name: "MON",
@@ -10,11 +10,11 @@ export const monadTestnet = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ["https://testnet-rpc.monad.xyz"],
+      http: ["https://rpc.monad.xyz"],
     },
   },
   blockExplorers: {
-    default: { name: "Monad Explorer", url: "https://testnet.monadexplorer.com" },
+    default: { name: "Monad Explorer", url: "https://monad.socialscan.io" },
   },
 });
 

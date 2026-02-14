@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.28;
 
 import "forge-std/Script.sol";
 import "../src/AgentRegistry.sol";
@@ -7,15 +7,15 @@ import "../src/WagerVault.sol";
 import "../src/GameSettlement.sol";
 
 /**
- * @title DeployTestnet
- * @notice Full deployment for Monad Testnet (uses native MON)
- * @dev Run with: forge script script/Deploy.s.sol:DeployTestnet --rpc-url $MONAD_RPC_URL --broadcast
+ * @title DeployMainnet
+ * @notice Full deployment for Monad Mainnet (uses native MON)
+ * @dev Run with: forge script script/Deploy.s.sol:DeployMainnet --rpc-url $MONAD_RPC_URL --broadcast
  */
-contract DeployTestnet is Script {
+contract DeployMainnet is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        console.log("Deploying Among Us On-Chain to Monad Testnet...");
+        console.log("Deploying Among Us On-Chain to Monad Mainnet...");
         console.log("Deployer:", vm.addr(deployerPrivateKey));
 
         vm.startBroadcast(deployerPrivateKey);

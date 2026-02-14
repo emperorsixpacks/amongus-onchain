@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 import { PrivyProvider } from "@privy-io/react-auth";
-import { config, monadTestnet } from "@/lib/wagmi";
+import { config, monadMainnet } from "@/lib/wagmi";
 import { useState, createContext, useContext, type ReactNode } from "react";
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "";
@@ -42,8 +42,8 @@ export function Providers({ children }: { children: ReactNode }) {
               createOnLogin: "users-without-wallets",
             },
           },
-          defaultChain: monadTestnet,
-          supportedChains: [monadTestnet],
+          defaultChain: monadMainnet,
+          supportedChains: [monadMainnet],
         }}
       >
         <PrivyEnabledContext.Provider value={true}>

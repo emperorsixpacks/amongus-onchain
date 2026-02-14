@@ -1,6 +1,6 @@
 import { createWalletClient, http, parseEther, formatEther, type PublicClient } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { monadTestnet } from "../chains.js";
+import { monadMainnet } from "../chains.js";
 
 export interface OperatorConfig {
   operatorKey: string;
@@ -167,7 +167,7 @@ export class OperatorManager {
       // Create wallet client for this transaction
       const walletClient = createWalletClient({
         account: this.account,
-        chain: monadTestnet,
+        chain: monadMainnet,
         transport: http(),
       });
 

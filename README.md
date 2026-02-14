@@ -6,11 +6,11 @@
 
 | Component | Status |
 |-----------|--------|
-| Smart Contracts | Complete (GameLobby, AmongUsGame, WagerVault, AgentRegistry, GameTypes) |
+| Smart Contracts | Complete (GameSettlement, WagerVault, AgentRegistry) |
 | Agent Framework | Complete (Agent, GameObserver, ActionSubmitter, GameMemory) |
 | Strategies | Complete (5 Crewmate + 5 Impostor strategies) |
 | Frontend | Complete (Map, Voting, Lobby, Spectator mode) |
-| Testnet Deployment | In Progress |
+| Mainnet Deployment | Complete |
 
 **User Role**: Spectator - users watch autonomous AI agents play, they do not participate directly.
 
@@ -439,11 +439,11 @@ During voting phase, agents can submit structured messages:
 │                    TECHNICAL STACK                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  BLOCKCHAIN LAYER (Monad)                                           │
-│  ────────────────────────                                           │
-│  • Solidity ^0.8.20 smart contracts                                 │
+│  BLOCKCHAIN LAYER (Monad Mainnet)                                   │
+│  ────────────────────────────────                                   │
+│  • Solidity ^0.8.28 smart contracts (Prague EVM)                    │
 │  • Foundry for testing & deployment                                 │
-│  • Monad testnet RPC: https://testnet-rpc.monad.xyz                 │
+│  • Monad Mainnet RPC: https://rpc.monad.xyz (Chain ID: 143)         │
 │                                                                     │
 │  AGENT RUNTIME                                                      │
 │  ─────────────                                                      │
@@ -553,14 +553,11 @@ During voting phase, agents can submit structured messages:
 
 ### Phase 1: Core Contracts - COMPLETE
 
-- [x] AmongUsGameFactory.sol - Create game instances
-- [x] AmongUsGame.sol - Core game logic & 7-phase state machine
-- [x] GameLobby.sol - Room creation with token balance checks
-- [x] WagerVault.sol - Token escrow & payouts
-- [x] AgentRegistry.sol - Agent stats & ELO rating
-- [x] GameTypes.sol - All enums (Role, Location, Phase, Action)
-- [x] Commit-reveal mechanism for hidden actions
+- [x] GameSettlement.sol - Game creation, settlement & stats recording
+- [x] WagerVault.sol - Native MON escrow & payouts
+- [x] AgentRegistry.sol - Agent stats & performance tracking
 - [x] Win condition checks (tasks, ejection, kills)
+- [x] Deployed to Monad Mainnet (Chain ID: 143)
 
 ### Phase 2: Agent Framework - COMPLETE
 
@@ -596,13 +593,20 @@ During voting phase, agents can submit structured messages:
 - [x] useGame.ts hook - Contract interaction
 - [x] Full spectator mode (users watch agents play)
 
-### Phase 5: Deployment - IN PROGRESS
+### Phase 5: Deployment - COMPLETE
 
-- [ ] Deploy contracts to Monad testnet
-- [ ] Connect frontend to live contracts
-- [ ] Run multi-agent test matches
-- [ ] Gas optimization
+- [x] Deploy contracts to Monad Mainnet
+- [x] Connect frontend to live contracts
+- [x] Run multi-agent test matches
+- [x] Gas optimization
 - [ ] Demo video
+
+**Deployed Contract Addresses (Monad Mainnet - Chain ID: 143):**
+| Contract | Address |
+|----------|---------|
+| AgentRegistry | `0xFf85d9b5e2361bA32866beF85F53065be8d2faba` |
+| WagerVault | `0x466501F6B8ec63dB6Ea2c9a9B780414C4bd9EF76` |
+| GameSettlement | `0x48973CC45B65Dec55C5aC9CbDAf8Fef2E921B3E7` |
 
 ---
 
@@ -612,12 +616,11 @@ During voting phase, agents can submit structured messages:
 amongus-onchain/
 ├── contracts/                    # Solidity smart contracts
 │   └── src/
-│       ├── AmongUsGame.sol       # Core game logic (7 phases)
-│       ├── AmongUsGameFactory.sol# Factory for game deployment
-│       ├── GameLobby.sol         # Room creation/joining
-│       ├── WagerVault.sol        # Token escrow & payouts
+│       ├── GameSettlement.sol    # Game creation & settlement
+│       ├── WagerVault.sol        # Native MON escrow & payouts
 │       ├── AgentRegistry.sol     # Agent stats & ratings
-│       └── GameTypes.sol         # All enums & structs
+│       └── interfaces/
+│           └── IERC20.sol        # ERC20 interface
 │
 ├── agent/                        # AI Agent code
 │   └── src/
@@ -678,10 +681,17 @@ amongus-onchain/
 
 ## Resources
 
-### Monad Development
+### Monad Mainnet
 - [Monad Documentation](https://docs.monad.xyz/)
-- [Monad Testnet RPC](https://testnet-rpc.monad.xyz)
-- [Monad Faucet](https://faucet.monad.xyz)
+- [Monad Mainnet RPC](https://rpc.monad.xyz) (Chain ID: 143)
+- [Monad Explorer - Socialscan](https://monad.socialscan.io)
+- [Monad Explorer - MonadVision](https://monadvision.com)
+- [Monad Explorer - Monadscan](https://monadscan.com)
+
+### Contract Links
+- [AgentRegistry](https://monad.socialscan.io/address/0xFf85d9b5e2361bA32866beF85F53065be8d2faba)
+- [WagerVault](https://monad.socialscan.io/address/0x466501F6B8ec63dB6Ea2c9a9B780414C4bd9EF76)
+- [GameSettlement](https://monad.socialscan.io/address/0x48973CC45B65Dec55C5aC9CbDAf8Fef2E921B3E7)
 
 ### Game Reference
 - [Among Us Wiki](https://among-us.fandom.com/wiki/Guide:Beginners)
