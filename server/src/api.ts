@@ -17,31 +17,44 @@ const logger = createLogger("api");
 async function registerOperatorKey(
   operatorKey: string,
   walletAddress: string,
-): Promise<boolean> {
+): Promise<Operator | null> {
   // Operator key must start with "oper_"
   if (!operatorKey.startsWith("oper_")) {
-    return false;
-  }
-
-  // Check if key already exists
-  const existing = await databaseService.getOperatorByKey(operatorKey);
-  if (existing) {
-    return false;
+    return null;
   }
 
   const normalizedAddress = walletAddress.toLowerCase();
 
+  // Check if wallet already has an operator key
+  const existingByWallet =
+    await databaseService.getOperatorByWallet(normalizedAddress);
+  if (existingByWallet) {
+    logger.info(
+      `Wallet ${normalizedAddress.slice(0, 10)}... already has an operator key: ${existingByWallet.operatorKey.slice(0, 10)}...`,
+    );
+    return existingByWallet;
+  }
+
+  // Check if key already exists (should not happen if key is unique)
+  const existingByKey = await databaseService.getOperatorByKey(operatorKey);
+  if (existingByKey) {
+    return null;
+  }
+
   // Persist to database
-  databaseService.upsertOperator({
+  const operator = await databaseService.upsertOperator({
     name: `Operator ${normalizedAddress.slice(0, 10)}`,
     operatorKey,
     walletAddress: normalizedAddress,
   });
 
-  logger.info(
-    `Registered operator key for ${normalizedAddress.slice(0, 10)}... (persisted to DB)`,
-  );
-  return true;
+  if (operator) {
+    logger.info(
+      `Registered new operator key for ${normalizedAddress.slice(0, 10)}... (persisted to DB)`,
+    );
+  }
+
+  return operator;
 }
 
 async function validateOperatorKey(operatorKey: string) {
@@ -243,17 +256,18 @@ export function createApiServer(
       return;
     }
 
-    const success = await registerOperatorKey(operatorKey, walletAddress);
+    const operator = await registerOperatorKey(operatorKey, walletAddress);
 
-    if (!success) {
+    if (!operator) {
       res.status(409).json({ error: "Operator key already registered" });
       return;
     }
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
-      walletAddress: walletAddress.toLowerCase(),
-      createdAt: Date.now(),
+      operatorKey: operator.operatorKey,
+      walletAddress: operator.walletAddress.toLowerCase(),
+      createdAt: operator.createdAt,
     });
   });
 

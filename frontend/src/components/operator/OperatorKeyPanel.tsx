@@ -117,31 +117,44 @@ export function OperatorKeyPanel() {
 
     const initKey = async () => {
       setInitialized(true);
+      setLoading(true);
+      setError(null);
 
-      // 1. If we have a saved key in localStorage, validate it
-      if (operatorKey) {
-        const isValid = await validateKeyWithServer(operatorKey.operatorKey);
-        if (isValid) {
-          return; // Key is valid, nothing to do
-        }
-
-        // Key is not valid on server, try to register it
-        const registered = await registerKeyWithServer(operatorKey.operatorKey, walletAddress);
-        if (registered) {
-          return; // Successfully registered existing key
-        }
-
-        // Key couldn't be registered, clear it
-        localStorage.removeItem(`${STORAGE_KEY}-${walletAddress.toLowerCase()}`);
-        setOperatorKey(null);
-      }
-
-      // 2. No valid key in localStorage, try to fetch from backend using Privy auth
       try {
+        // 1. Check if we already have a key in state (loaded from useEffect above)
+        // or in localStorage directly as a fallback
+        let currentKeyData = operatorKey;
+        if (!currentKeyData) {
+          const saved = localStorage.getItem(`${STORAGE_KEY}-${walletAddress.toLowerCase()}`);
+          if (saved) {
+            try {
+              currentKeyData = JSON.parse(saved) as OperatorKeyData;
+            } catch (e) {
+              console.error("Failed to parse saved operator key:", e);
+            }
+          }
+        }
+
+        // 2. If we have a saved key, validate it
+        if (currentKeyData) {
+          console.log("Validating existing operator key from storage...");
+          const isValid = await validateKeyWithServer(currentKeyData.operatorKey);
+          if (isValid) {
+            console.log("Existing operator key is valid.");
+            setOperatorKey(currentKeyData);
+            setLoading(false);
+            return;
+          }
+          console.log("Existing operator key is invalid on server.");
+        }
+
+        // 3. Try to fetch existing key from backend using Privy auth
+        console.log("Attempting to recover operator key from backend...");
         const token = await getAccessToken();
         if (token) {
           const result = await api.getActiveOperatorKey(token);
           if (result.success && result.operatorKey) {
+            console.log("Successfully recovered operator key from backend.");
             const keyData: OperatorKeyData = {
               operatorKey: result.operatorKey,
               walletAddress: walletAddress.toLowerCase(),
@@ -149,15 +162,20 @@ export function OperatorKeyPanel() {
             };
             localStorage.setItem(`${STORAGE_KEY}-${walletAddress.toLowerCase()}`, JSON.stringify(keyData));
             setOperatorKey(keyData);
-            return; // Successfully recovered key from backend
+            setLoading(false);
+            return;
           }
         }
-      } catch (err) {
-        console.error("Failed to fetch active operator key from backend:", err);
-      }
 
-      // 3. No valid key anywhere, generate a new one
-      await generateAndRegisterKey();
+        // 4. No key found anywhere or existing key invalid, generate a new one
+        console.log("No existing operator key found. Generating new one...");
+        await generateAndRegisterKey();
+      } catch (err) {
+        console.error("Error during operator key initialization:", err);
+        setError("Failed to initialize operator key");
+      } finally {
+        setLoading(false);
+      }
     };
 
     initKey();
