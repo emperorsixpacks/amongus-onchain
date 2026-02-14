@@ -54,6 +54,8 @@ export default function Home() {
     isConnected,
     error: wsError,
     currentRoom,
+    rooms: wsRooms,
+    stats: wsStats,
     players,
     deadBodies,
     logs,
@@ -64,9 +66,9 @@ export default function Home() {
     leaveRoom,
   } = useGameServer();
 
-  // Use HTTP data for menu, WebSocket for gameplay
-  const rooms = httpRooms;
-  const stats = httpStats;
+  // Use WebSocket data when connected for real-time updates, fallback to HTTP
+  const rooms = isConnected && wsRooms.length > 0 ? wsRooms : httpRooms;
+  const stats = isConnected && wsStats ? wsStats : httpStats;
   const leaderboard = httpLeaderboard;
   const error = wsError || httpError;
 
