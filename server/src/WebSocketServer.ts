@@ -29,7 +29,7 @@ const EJECTION_DURATION = 5000; // 5 seconds
 // Room management constants
 const MAX_ROOMS = 3;
 const MAX_PLAYERS_PER_ROOM = 10;
-const MIN_PLAYERS_TO_START = 6;
+const MIN_PLAYERS_TO_START = 2;
 const FILL_WAIT_DURATION = 30000; // 30 seconds to wait for room to fill after min players
 const MIN_PLAYERS_WAIT_DURATION = 120000; // 2 minutes to wait for min players before deleting room
 const COOLDOWN_DURATION = 600000; // 10 minutes cooldown after game ends
