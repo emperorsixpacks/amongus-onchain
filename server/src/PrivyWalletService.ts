@@ -4,12 +4,20 @@ import { databaseService } from "./DatabaseService.js";
 
 const logger = createLogger("privy-wallet");
 
-// Privy configuration from environment
-const PRIVY_APP_ID = process.env.PRIVY_APP_ID || "";
-const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || "";
 
-const PRIVY_WALLET_AUTHORIZATION_KEY = process.env.PRIVY_WALLET_AUTHORIZATION_KEY || "";
-const PRIVY_WALLET_AUTHORIZATION_KEY_ID = process.env.PRIVY_WALLET_AUTHORIZATION_KEY_ID || "";
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`❌ Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const PRIVY_APP_ID = requireEnv("PRIVY_APP_ID");
+const PRIVY_APP_SECRET = requireEnv("PRIVY_APP_SECRET");
+
+const PRIVY_WALLET_AUTHORIZATION_KEY = requireEnv("PRIVY_WALLET_AUTHORIZATION_KEY");
+const PRIVY_WALLET_AUTHORIZATION_KEY_ID = requireEnv("PRIVY_WALLET_AUTHORIZATION_KEY_ID");
 
 interface AgentWallet {
   userId: string;       // Privy user ID
