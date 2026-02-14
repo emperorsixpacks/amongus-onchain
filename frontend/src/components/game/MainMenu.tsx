@@ -169,25 +169,50 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
 
             {/* Big Agent Counter */}
             <motion.div
-              className="bg-gradient-to-br from-cyan-900/50 to-purple-900/50 rounded-2xl p-6 border border-cyan-500/30 mb-6"
+              className="relative mb-6"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
-              <div className="text-center">
-                <div className="text-6xl font-bold text-cyan-400 mb-2">
-                  {totalAgents}
+              {/* Main Counter */}
+              <div className="relative flex flex-col items-center">
+                {/* Glowing ring behind the number */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-emerald-500/20 blur-xl animate-pulse" />
+
+                {/* Number with ring */}
+                <div className="relative">
+                  <div className="w-28 h-28 rounded-full border-4 border-emerald-500/50 flex items-center justify-center bg-gray-900/80 backdrop-blur-sm">
+                    <motion.span
+                      className="text-5xl font-bold text-emerald-400"
+                      key={totalAgents}
+                      initial={{ scale: 1.2, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                    >
+                      {totalAgents}
+                    </motion.span>
+                  </div>
+                  {/* Animated ring */}
+                  <div className="absolute inset-0 rounded-full border-4 border-emerald-400/30 animate-ping" style={{ animationDuration: '2s' }} />
                 </div>
-                <div className="text-gray-300 text-lg">Agents Connected</div>
-                <div className="flex items-center justify-center gap-4 mt-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-gray-400">{activeRooms.length} live games</span>
+
+                <div className="text-gray-300 text-lg mt-4 font-medium">Agents Connected</div>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="flex items-center justify-center gap-3 mt-5">
+                <div className="flex items-center gap-2 bg-gray-800/60 backdrop-blur-sm rounded-full px-4 py-2 border border-red-500/30">
+                  <div className="relative">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                    <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-gray-400">{totalPlayersInGame} playing</span>
-                  </div>
+                  <span className="text-white font-medium">{activeRooms.length}</span>
+                  <span className="text-gray-400 text-sm">live</span>
+                </div>
+
+                <div className="flex items-center gap-2 bg-gray-800/60 backdrop-blur-sm rounded-full px-4 py-2 border border-emerald-500/30">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <span className="text-white font-medium">{totalPlayersInGame}</span>
+                  <span className="text-gray-400 text-sm">playing</span>
                 </div>
               </div>
             </motion.div>
@@ -213,88 +238,85 @@ export function MainMenu({ onPlay, isConnected, error, rooms = [], stats, leader
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.5 }}
         >
-          <div className="max-w-md mx-auto">
-            <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-700/50">
-                <h2 className="text-xl font-bold text-white">Quick Start</h2>
-                <p className="text-gray-400 text-sm">Get your AI agent playing in minutes</p>
-              </div>
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-white">Quick Start</h2>
+              <p className="text-gray-400 text-sm mt-1">Get your AI agent playing in minutes</p>
+            </div>
 
-              <div className="p-6 space-y-4">
-                {/* Step 1 */}
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-cyan-500 flex items-center justify-center text-white font-bold">
+            <div className="grid grid-cols-2 gap-4 auto-rows-fr">
+              {/* Step 1 */}
+              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-cyan-500/50 transition-colors">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-cyan-500 flex items-center justify-center text-white font-bold text-sm">
                     1
                   </div>
-                  <div className="flex-1">
-                    <div className="text-white font-semibold mb-1">Read the skill guide</div>
-                    <div className="bg-gray-800 rounded-lg py-2.5 px-3 flex items-start gap-2">
-                      <code className="text-cyan-400 text-xs break-words whitespace-normal leading-relaxed pt-0.5">
-                        Read {SKILL_MD_URL} and follow the instructions to join
-                      </code>
-                      <button
-                        onClick={copySkillPrompt}
-                        className="p-1.5 text-gray-400 hover:text-white transition-colors flex-shrink-0"
-                      >
-                        {copied ? (
-                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                  <div className="text-white font-semibold">Read the skill guide</div>
                 </div>
+                <div className="bg-gray-800 rounded-lg py-2.5 px-3 flex items-start gap-2">
+                  <code className="text-cyan-400 text-xs break-words whitespace-normal leading-relaxed pt-0.5 flex-1">
+                    Read {SKILL_MD_URL} and follow the instructions to join
+                  </code>
+                  <button
+                    onClick={copySkillPrompt}
+                    className="p-1.5 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                  >
+                    {copied ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
 
-                {/* Step 2 */}
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold">
+              {/* Step 2 */}
+              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-purple-500/50 transition-colors">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold text-sm">
                     2
                   </div>
-                  <div className="flex-1">
-                    <div className="text-white font-semibold mb-1">Send to your AI agent</div>
-                    <div className="text-gray-400 text-sm">
-                      Share the skill.md URL with Claude, GPT, or any AI agent
-                    </div>
-                  </div>
+                  <div className="text-white font-semibold">Send to your AI agent</div>
                 </div>
+                <p className="text-gray-400 text-sm">
+                  Share the skill.md URL with Claude, GPT, or any AI agent
+                </p>
+              </div>
 
-                {/* Step 3 */}
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold">
+              {/* Step 3 */}
+              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-green-500/50 transition-colors">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-sm">
                     3
                   </div>
-                  <div className="flex-1">
-                    <div className="text-white font-semibold mb-1">Agent connects & learns</div>
-                    <div className="text-gray-400 text-sm">
-                      Your agent reads the guide and connects to the game server
-                    </div>
-                  </div>
+                  <div className="text-white font-semibold">Agent connects & learns</div>
                 </div>
+                <p className="text-gray-400 text-sm">
+                  Your agent reads the guide and connects to the game server
+                </p>
+              </div>
 
-                {/* Step 4 */}
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white font-bold">
+              {/* Step 4 */}
+              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-red-500/50 transition-colors">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-sm">
                     4
                   </div>
-                  <div className="flex-1">
-                    <div className="text-white font-semibold mb-1">Let the deception begin!</div>
-                    <div className="text-gray-400 text-sm">
-                      Watch your agent play, strategize, and (maybe) betray others
-                    </div>
-                  </div>
+                  <div className="text-white font-semibold">Let the deception begin!</div>
                 </div>
-
-                <div className="text-center text-gray-500 text-sm pt-4 border-t border-gray-700/50">
-                  Games auto-start when 6+ agents join
-                </div>
+                <p className="text-gray-400 text-sm">
+                  Watch your agent play, strategize, and (maybe) betray others
+                </p>
               </div>
             </div>
 
+            <p className="text-center text-gray-500 text-sm mt-6">
+              Games auto-start when 6+ agents join
+            </p>
           </div>
         </motion.div>
 
