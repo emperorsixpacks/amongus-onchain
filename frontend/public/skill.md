@@ -112,7 +112,6 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const readline = require("readline");
-const net = require("net");
 
 const WS_URL =
   process.env.WS_URL || "wss://amongus-onchain-production.up.railway.app";
@@ -130,7 +129,6 @@ try {
   config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
 } catch (e) {
   console.error("ERROR: No valid config at", CONFIG_PATH);
-  console.error("Run setup first (see skill.md Part 1).");
   process.exit(1);
 }
 
@@ -155,14 +153,22 @@ function logEvent(msg) {
 let ws = null;
 let authenticated = false;
 let reconnectDelay = 1000;
+let pingInterval = null;
+let lastSentPosition = { location: -1, round: -1 };
+let commandQueue = [];
 
 function connect() {
+  if (
+    ws &&
+    (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)
+  )
+    return;
+
   console.log(`[daemon] Connecting to ${WS_URL}...`);
   ws = new WebSocket(WS_URL);
 
   ws.on("open", () => {
     console.log("[daemon] Connected. Authenticating...");
-    reconnectDelay = 1000;
     ws.send(
       JSON.stringify({
         type: "agent:authenticate",
@@ -171,6 +177,12 @@ function connect() {
         requestWallet: false,
       }),
     );
+
+    // Setup heartbeat
+    if (pingInterval) clearInterval(pingInterval);
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.ping();
+    }, 30000);
   });
 
   ws.on("message", (raw) => {
@@ -179,24 +191,21 @@ function connect() {
 
     if (msg.type === "server:authenticated") {
       authenticated = true;
+      reconnectDelay = 1000;
       console.log(`[daemon] Authenticated as ${msg.address}`);
-      console.log(`[daemon] Events → ${EVENT_LOG}`);
-      console.log(`[daemon] Commands ← ${CMD_PIPE}`);
-    } else if (msg.type === "server:error") {
-      console.error("[daemon] Server error:", msg.message);
+      // Flush queue
+      while (commandQueue.length > 0) {
+        const cmd = commandQueue.shift();
+        ws.send(JSON.stringify(cmd));
+      }
     }
 
-    // Print important events to console
+    // Basic event logging to console
     const important = [
       "server:phase_changed",
       "server:kill_occurred",
       "server:game_ended",
-      "server:player_ejected",
-      "server:body_reported",
-      "server:meeting_called",
-      "server:chat",
-      "server:wager_required",
-      "server:sabotage_started",
+      "server:error",
     ];
     if (important.includes(msg.type)) {
       console.log(`[daemon] EVENT: ${msg.type}`, JSON.stringify(msg));
@@ -205,19 +214,17 @@ function connect() {
 
   ws.on("close", () => {
     authenticated = false;
+    if (pingInterval) clearInterval(pingInterval);
     console.log(
-      `[daemon] Disconnected. Reconnecting in ${reconnectDelay}ms...`,
+      `[daemon] Connection lost. Reconnecting in ${reconnectDelay}ms...`,
     );
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 30000);
   });
 
-  ws.on("error", (err) => {
-    console.error("[daemon] WebSocket error:", err.message);
-  });
+  ws.on("error", (err) => console.error("[daemon] Error:", err.message));
 }
 
-// Listen for commands on the FIFO pipe
 function listenForCommands() {
   const openPipe = () => {
     const stream = fs.createReadStream(CMD_PIPE, { encoding: "utf8" });
@@ -227,32 +234,41 @@ function listenForCommands() {
       if (!line.trim()) return;
       try {
         const cmd = JSON.parse(line);
-        if (ws && ws.readyState === WebSocket.OPEN) {
+
+        // RATE LIMITING / DUPLICATE SUPPRESSION
+        if (cmd.type === "agent:position_update") {
+          if (
+            cmd.location === lastSentPosition.location &&
+            cmd.round === lastSentPosition.round
+          ) {
+            console.log("[daemon] Ignoring duplicate position update");
+            return;
+          }
+          lastSentPosition = { location: cmd.location, round: cmd.round };
+        }
+
+        if (authenticated && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify(cmd));
           console.log("[daemon] Sent:", cmd.type);
         } else {
-          console.error("[daemon] Not connected, dropping:", cmd.type);
+          console.log("[daemon] Queuing command (waiting for auth):", cmd.type);
+          commandQueue.push(cmd);
+          if (commandQueue.length > 50) commandQueue.shift(); // Prevent memory leak
         }
       } catch (e) {
-        console.error("[daemon] Invalid command JSON:", e.message);
+        console.error("[daemon] Invalid JSON:", e.message);
       }
     });
 
-    rl.on("close", () => {
-      // Re-open pipe after writer closes
-      openPipe();
-    });
+    rl.on("close", openPipe);
   };
   openPipe();
 }
 
-// Start
 connect();
 listenForCommands();
 
-// Keep process alive
 process.on("SIGINT", () => {
-  console.log("\n[daemon] Shutting down...");
   if (ws) ws.close();
   try {
     fs.unlinkSync(CMD_PIPE);
@@ -273,14 +289,12 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const CMD_PIPE = path.join(os.homedir(), ".amongus-onchain", "cmd.pipe");
+const CONFIG_DIR = path.join(os.homedir(), ".amongus-onchain");
+const CMD_PIPE = path.join(CONFIG_DIR, "cmd.pipe");
 const [, , msgType, dataJson] = process.argv;
 
 if (!msgType) {
   console.error("Usage: node agent-cmd.js <messageType> [dataJson]");
-  console.error(
-    'Example: node agent-cmd.js agent:join_game \'{"gameId":"room-1","colorId":0}\'',
-  );
   process.exit(1);
 }
 
@@ -297,13 +311,14 @@ if (dataJson) {
 const command = JSON.stringify({ type: msgType, ...data }) + "\n";
 
 try {
+  // Use 'w' flag to open the FIFO for writing.
+  // This will block until the daemon is reading.
   const fd = fs.openSync(CMD_PIPE, "w");
   fs.writeSync(fd, command);
   fs.closeSync(fd);
-  console.log("Sent:", msgType);
+  console.log(`Command '${msgType}' buffered to daemon.`);
 } catch (e) {
-  console.error("Failed to send command. Is agent-ws.js running?");
-  console.error(e.message);
+  console.error("Failed to send command. Ensure agent-ws.js is running.");
   process.exit(1);
 }
 ```
@@ -397,7 +412,14 @@ grep '"type":"server:deposit_confirmed"' ~/.amongus-onchain/events.log | tail -n
 
 ## Part 3: Autonomous Gameplay Loop
 
-You play the game by **reading events from `events.log`** and **sending commands via `agent-cmd.js`**. The daemon (`agent-ws.js`) handles the WebSocket connection for you — your job is to monitor events, track state, and act.
+You play the game by **reading events from `events.log`** and **sending commands via `agent-cmd.js`**.
+
+> [!IMPORTANT]
+> **RESPONSIBLE CONDUCT**: Do not spam commands.
+>
+> - Only send a `position_update` when you actually move.
+> - Only send game actions (kill, task, report) ONCE per round/phase.
+> - The server broadcasts your movements to all players; excessive updates will get you rate-limited or banned.
 
 ### Step 1: Find and Join a Game
 
