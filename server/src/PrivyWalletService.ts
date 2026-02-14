@@ -4,7 +4,6 @@ import { databaseService } from "./DatabaseService.js";
 
 const logger = createLogger("privy-wallet");
 
-
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -13,17 +12,29 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const PRIVY_APP_ID = requireEnv("PRIVY_APP_ID");
-const PRIVY_APP_SECRET = requireEnv("PRIVY_APP_SECRET");
+const PRIVY_APP_ID = requireEnv("PRIVY_APP_ID")
+  .trim()
+  .replace(/^["'](.+)["']$/, "$1");
+const PRIVY_APP_SECRET = requireEnv("PRIVY_APP_SECRET")
+  .trim()
+  .replace(/^["'](.+)["']$/, "$1");
 
-const PRIVY_WALLET_AUTHORIZATION_KEY = requireEnv("PRIVY_WALLET_AUTHORIZATION_KEY");
-const PRIVY_WALLET_AUTHORIZATION_KEY_ID = requireEnv("PRIVY_WALLET_AUTHORIZATION_KEY_ID");
+const PRIVY_WALLET_AUTHORIZATION_KEY = requireEnv(
+  "PRIVY_WALLET_AUTHORIZATION_KEY",
+)
+  .trim()
+  .replace(/^["'](.+)["']$/, "$1");
+const PRIVY_WALLET_AUTHORIZATION_KEY_ID = requireEnv(
+  "PRIVY_WALLET_AUTHORIZATION_KEY_ID",
+)
+  .trim()
+  .replace(/^["'](.+)["']$/, "$1");
 
 interface AgentWallet {
-  userId: string;       // Privy user ID
-  address: string;      // Wallet address
-  walletId: string;     // Privy wallet ID
-  operatorKey: string;  // Operator key that owns this agent
+  userId: string; // Privy user ID
+  address: string; // Wallet address
+  walletId: string; // Privy wallet ID
+  operatorKey: string; // Operator key that owns this agent
   createdAt: number;
 }
 
@@ -34,26 +45,42 @@ export class PrivyWalletService {
   private client: PrivyClient | null = null;
 
   constructor() {
-    if (PRIVY_APP_ID && PRIVY_APP_SECRET &&
+    if (
+      PRIVY_APP_ID &&
+      PRIVY_APP_SECRET &&
       PRIVY_APP_ID !== "your-privy-app-id-here" &&
-      PRIVY_APP_SECRET !== "your-privy-app-secret-here") {
-
+      PRIVY_APP_SECRET !== "your-privy-app-secret-here"
+    ) {
       const config: any = {
         appId: PRIVY_APP_ID,
         appSecret: PRIVY_APP_SECRET,
       };
 
       this.client = new PrivyClient(config);
-      logger.info("Privy wallet service initialized");
+      logger.info(
+        `Privy wallet service initialized (App ID: ${PRIVY_APP_ID.substring(0, 10)}...)`,
+      );
 
-      if (PRIVY_WALLET_AUTHORIZATION_KEY && !PRIVY_WALLET_AUTHORIZATION_KEY_ID) {
-        logger.warn("PRIVY_WALLET_AUTHORIZATION_KEY is set but PRIVY_WALLET_AUTHORIZATION_KEY_ID (owner_id) is missing. Server-side wallet signing will fail.");
+      if (
+        PRIVY_WALLET_AUTHORIZATION_KEY &&
+        !PRIVY_WALLET_AUTHORIZATION_KEY_ID
+      ) {
+        logger.warn(
+          "PRIVY_WALLET_AUTHORIZATION_KEY is set but PRIVY_WALLET_AUTHORIZATION_KEY_ID (owner_id) is missing. Server-side wallet signing will fail.",
+        );
       }
       if (PRIVY_WALLET_AUTHORIZATION_KEY_ID) {
-        logger.info(`Using authorization key owner_id: ${PRIVY_WALLET_AUTHORIZATION_KEY_ID}`);
+        logger.info(
+          `Using authorization key owner_id: ${PRIVY_WALLET_AUTHORIZATION_KEY_ID}`,
+        );
+        logger.info(
+          `Authorization key length: ${PRIVY_WALLET_AUTHORIZATION_KEY.length} chars`,
+        );
       }
     } else {
-      logger.warn("Privy not configured - wallet creation disabled. Set PRIVY_APP_ID and PRIVY_APP_SECRET in .env");
+      logger.warn(
+        "Privy not configured - wallet creation disabled. Set PRIVY_APP_ID and PRIVY_APP_SECRET in .env",
+      );
     }
   }
 
@@ -69,7 +96,9 @@ export class PrivyWalletService {
    * @param operatorKey The operator key (oper_XXXXX)
    * @returns The wallet address or null if failed
    */
-  async createAgentWallet(operatorKey: string): Promise<{ address: string; userId: string } | null> {
+  async createAgentWallet(
+    operatorKey: string,
+  ): Promise<{ address: string; userId: string } | null> {
     if (!this.client) {
       logger.error("Cannot create wallet: Privy not configured");
       return null;
@@ -104,10 +133,14 @@ export class PrivyWalletService {
           privyWalletId: walletId,
         });
       } else {
-        logger.warn(`Operator ${operatorKey} not found in DB - agent wallet persisted in memory only`);
+        logger.warn(
+          `Operator ${operatorKey} not found in DB - agent wallet persisted in memory only`,
+        );
       }
 
-      logger.info(`Created server-side agent wallet: ${address} (ID: ${walletId}) for operator: ${operatorKey}`);
+      logger.info(
+        `Created server-side agent wallet: ${address} (ID: ${walletId}) for operator: ${operatorKey}`,
+      );
 
       return {
         address,
@@ -123,7 +156,7 @@ export class PrivyWalletService {
    * Get agent wallet info by address from database
    */
   async getAgentWallet(address: string): Promise<AgentWallet | undefined> {
-    const agent = await databaseService.getAgentByWallet(address) as any;
+    const agent = (await databaseService.getAgentByWallet(address)) as any;
     if (!agent || !agent.privyWalletId) {
       return undefined;
     }
@@ -148,13 +181,15 @@ export class PrivyWalletService {
   /**
    * Get all agent wallets for an operator from database
    */
-  async getAgentWalletsForOperator(operatorKey: string): Promise<AgentWallet[]> {
+  async getAgentWalletsForOperator(
+    operatorKey: string,
+  ): Promise<AgentWallet[]> {
     const operator = await databaseService.getOperatorByKey(operatorKey);
     if (!operator) return [];
 
     return (operator.agents as any[])
-      .filter(agent => agent.privyWalletId)
-      .map(agent => ({
+      .filter((agent) => agent.privyWalletId)
+      .map((agent) => ({
         userId: agent.privyUserId || "server-managed",
         address: agent.walletAddress,
         walletId: agent.privyWalletId!,
@@ -166,7 +201,10 @@ export class PrivyWalletService {
   /**
    * Verify that an operator key owns a specific agent wallet
    */
-  async verifyOperatorOwnership(operatorKey: string, agentAddress: string): Promise<boolean> {
+  async verifyOperatorOwnership(
+    operatorKey: string,
+    agentAddress: string,
+  ): Promise<boolean> {
     const wallet = await this.getAgentWallet(agentAddress);
     return wallet?.operatorKey === operatorKey;
   }
@@ -174,7 +212,12 @@ export class PrivyWalletService {
   /**
    * Send a transaction from an agent wallet (requires Privy to be configured)
    */
-  async sendTransaction(address: string, to: string, data: string, value: string = "0"): Promise<string | null> {
+  async sendTransaction(
+    address: string,
+    to: string,
+    data: string,
+    value: string = "0",
+  ): Promise<string | null> {
     if (!this.client) {
       logger.error("Cannot send transaction: Privy not configured");
       return null;
@@ -192,26 +235,33 @@ export class PrivyWalletService {
 
       const chainId = parseInt(process.env.CHAIN_ID || "10143");
 
-
       // Correct API for server-side signing in @privy-io/node
       // Strip "wallet-auth:" prefix if present - SDK expects raw base64 PKCS8 key
-      const privateKey = PRIVY_WALLET_AUTHORIZATION_KEY.replace(/^wallet-auth:/, '');
+      const privateKey = PRIVY_WALLET_AUTHORIZATION_KEY.replace(
+        /^wallet-auth:/,
+        "",
+      );
       const authorizationContext: AuthorizationContext = {
-        authorization_private_keys: [privateKey]
+        authorization_private_keys: [privateKey],
       };
 
-      const response = await this.client.wallets().ethereum().sendTransaction(wallet.walletId, {
-        caip2: `eip155:${chainId}`,
-        authorization_context: authorizationContext,
-        params: {
+      // Correct API for server-side signing in @privy-io/node v0.8.0+
+      // Ensure transaction is top-level if required by current SDK structure
+      const response = await this.client
+        .wallets()
+        .ethereum()
+        .sendTransaction(wallet.walletId, {
+          caip2: `eip155:${chainId}`,
+          authorization_context: authorizationContext,
           transaction: {
             to,
-            value: value.startsWith("0x") ? value : `0x${BigInt(value).toString(16)}`,
+            value: value.startsWith("0x")
+              ? value
+              : `0x${BigInt(value).toString(16)}`,
             data,
             chain_id: chainId,
-          }
-        }
-      } as any);
+          },
+        } as any);
 
       const hash = response.hash;
       logger.info(`Transaction sent! Hash: ${hash}`);

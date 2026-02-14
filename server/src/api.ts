@@ -87,7 +87,9 @@ async function requireOperatorAuth(
   next();
 }
 
-export function createApiServer(wsServer: WebSocketRelayServer) {
+export function createApiServer(
+  wsServer: WebSocketRelayServer,
+): express.Express {
   const app = express();
 
   // Middleware
