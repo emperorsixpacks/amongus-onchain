@@ -250,4 +250,26 @@ export const api = {
     });
     return res.json();
   },
+
+  // Withdraw funds from agent's vault balance to operator wallet
+  async withdrawFunds(
+    operatorKey: string,
+    agentAddress: string,
+    amount: string, // "max" or wei amount
+  ): Promise<{
+    success: boolean;
+    txHash?: string;
+    amount?: string;
+    error?: string;
+  }> {
+    const res = await fetch(`${API_URL}/api/wager/withdraw`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${operatorKey}`,
+      },
+      body: JSON.stringify({ agentAddress, amount }),
+    });
+    return res.json();
+  },
 };

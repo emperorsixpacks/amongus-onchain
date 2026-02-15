@@ -21,11 +21,62 @@ interface AgentExtended extends AgentWallet {
   };
 }
 
+interface WithdrawState {
+  agentAddress: string;
+  loading: boolean;
+  error?: string;
+  success?: string;
+}
+
 export function UserDashboard({ onClose, onJoinGame, allRooms }: UserDashboardProps) {
   const { operatorKey, loading: keyLoading, error: keyError } = useOperatorKey();
   const [agents, setAgents] = useState<AgentExtended[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [withdrawState, setWithdrawState] = useState<WithdrawState | null>(null);
+
+  // Calculate total balance across all agents
+  const totalBalance = agents.reduce((sum, agent) => {
+    return sum + (agent.balance?.balanceMON || 0);
+  }, 0);
+
+  const totalProfit = agents.reduce((sum, agent) => {
+    if (!agent.balance) return sum;
+    return sum + Number(BigInt(agent.balance.totalWon) - BigInt(agent.balance.totalLost)) / 1e18;
+  }, 0);
+
+  const handleWithdraw = async (agentAddress: string, amount: string = "max") => {
+    if (!operatorKey) return;
+
+    setWithdrawState({ agentAddress, loading: true });
+    try {
+      const result = await api.withdrawFunds(operatorKey.operatorKey, agentAddress, amount);
+      if (result.success) {
+        setWithdrawState({
+          agentAddress,
+          loading: false,
+          success: `Withdrawn! TX: ${result.txHash?.slice(0, 10)}...`
+        });
+        // Refresh data after successful withdrawal
+        setTimeout(() => {
+          loadData();
+          setWithdrawState(null);
+        }, 3000);
+      } else {
+        setWithdrawState({
+          agentAddress,
+          loading: false,
+          error: result.error || "Withdrawal failed"
+        });
+      }
+    } catch (e) {
+      setWithdrawState({
+        agentAddress,
+        loading: false,
+        error: "Network error"
+      });
+    }
+  };
 
   useEffect(() => {
     if (operatorKey) {
@@ -79,21 +130,47 @@ export function UserDashboard({ onClose, onJoinGame, allRooms }: UserDashboardPr
         className="w-full max-w-5xl bg-slate-900/90 border border-emerald-500/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="p-6 border-b border-emerald-500/20 flex justify-between items-center bg-black/20">
-          <div>
-            <h2 className="text-2xl font-black text-white tracking-wider flex items-center gap-3">
-              <span className="text-emerald-400">OPERATOR DASHBOARD</span>
-            </h2>
-            <div className="text-xs font-mono text-emerald-500/60 mt-1">
-              KEY: {operatorKey?.operatorKey || "LOADING..."}
+        <div className="p-6 border-b border-emerald-500/20 bg-black/20">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h2 className="text-2xl font-black text-white tracking-wider flex items-center gap-3">
+                <span className="text-emerald-400">OPERATOR DASHBOARD</span>
+              </h2>
+              <div className="text-xs font-mono text-emerald-500/60 mt-1">
+                KEY: {operatorKey?.operatorKey || "LOADING..."}
+              </div>
             </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-white transition-colors"
+            >
+              CLOSE
+            </button>
           </div>
-          <button 
-            onClick={onClose}
-            className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-white transition-colors"
-          >
-            CLOSE
-          </button>
+
+          {/* Total Balance Summary */}
+          {!dataLoading && agents.length > 0 && (
+            <div className="grid grid-cols-3 gap-4 mt-4 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+              <div className="text-center">
+                <div className="text-[10px] text-emerald-400/70 uppercase mb-1">Total Vault Balance</div>
+                <div className="text-xl font-black text-white">
+                  {totalBalance.toFixed(4)} <span className="text-sm text-emerald-400">MON</span>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-emerald-400/70 uppercase mb-1">Total Net Profit</div>
+                <div className={`text-xl font-black ${totalProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {totalProfit >= 0 ? "+" : ""}{totalProfit.toFixed(4)} <span className="text-sm opacity-70">MON</span>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-emerald-400/70 uppercase mb-1">Active Agents</div>
+                <div className="text-xl font-black text-white">
+                  {agents.length}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Content */}
@@ -170,16 +247,41 @@ export function UserDashboard({ onClose, onJoinGame, allRooms }: UserDashboardPr
                       </div>
                     </div>
 
-                    {/* Action */}
-                    {activeRoom && (
-                      <button 
-                        onClick={() => onJoinGame(activeRoom.roomId)}
-                        className="w-full py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 rounded-lg text-emerald-300 text-xs font-bold transition-colors flex items-center justify-center gap-2"
-                      >
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"/>
-                        WATCH GAME {activeRoom.roomId.slice(0, 6)}...
-                      </button>
-                    )}
+                    {/* Actions */}
+                    <div className="space-y-2">
+                      {activeRoom && (
+                        <button
+                          onClick={() => onJoinGame(activeRoom.roomId)}
+                          className="w-full py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 rounded-lg text-emerald-300 text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"/>
+                          WATCH GAME {activeRoom.roomId.slice(0, 6)}...
+                        </button>
+                      )}
+
+                      {/* Withdraw Button */}
+                      {balance && balance.balanceMON > 0 && !activeRoom && (
+                        <button
+                          onClick={() => handleWithdraw(agent.address)}
+                          disabled={withdrawState?.agentAddress === agent.address && withdrawState.loading}
+                          className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-lg text-amber-300 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {withdrawState?.agentAddress === agent.address ? (
+                            withdrawState.loading ? (
+                              <span className="flex items-center justify-center gap-2">
+                                <span className="animate-spin">⏳</span> WITHDRAWING...
+                              </span>
+                            ) : withdrawState.success ? (
+                              <span className="text-green-400">{withdrawState.success}</span>
+                            ) : withdrawState.error ? (
+                              <span className="text-red-400">{withdrawState.error}</span>
+                            ) : null
+                          ) : (
+                            <>WITHDRAW {balance.balanceMON.toFixed(4)} MON</>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
