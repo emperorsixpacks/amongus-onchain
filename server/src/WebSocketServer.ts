@@ -785,6 +785,9 @@ export class WebSocketRelayServer {
     this.extendedState.set(roomId, extended);
     this.gameStateManager.getOrCreateGame(roomId);
 
+    // Register game in database
+    databaseService.createGame(roomId);
+
     logger.info(
       `Dynamic room ${roomId} created by ${creatorAddress || "anonymous"}`,
     );
@@ -1002,6 +1005,17 @@ export class WebSocketRelayServer {
 
     // Send room update
     this.broadcastToRoom(roomId, { type: "server:room_update", room });
+
+    // Send initial game state to all clients (including frontend)
+    const gameState = this.gameStateManager.getGame(roomId);
+    if (gameState) {
+      this.broadcastToRoom(roomId, {
+        type: "server:game_state",
+        gameId: roomId,
+        state: gameState,
+      });
+    }
+
     this.broadcastRoomList();
   }
 
