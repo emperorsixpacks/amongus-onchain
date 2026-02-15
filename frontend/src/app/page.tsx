@@ -508,7 +508,7 @@ function HomeInner({
                 console.error("Room creation failed. Full response:", result);
                 // Alert the user if the token was rejected
                 if (result.error?.toLowerCase().includes("privy token")) {
-                  alert(`Session validation failed: ${result.error}${result.details ? ` (${result.details})` : ""}. Please refresh and try again.`);
+                  alert(`Session validation failed: ${result.error}. Please refresh and try again.`);
                 }
               }
             } catch (err) {
