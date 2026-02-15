@@ -281,7 +281,7 @@ export class DatabaseService {
   updateAgentBalance(
     walletAddress: string,
     balanceChange: bigint,
-    type: "deposit" | "wager" | "winnings" | "refund",
+    type: "deposit" | "wager" | "winnings" | "refund" | "withdraw",
   ): void {
     this.queueWrite(async () => {
       const agent = await this.prisma.agent.findUnique({
