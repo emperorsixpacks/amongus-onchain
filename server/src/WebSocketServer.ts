@@ -504,6 +504,16 @@ export class WebSocketRelayServer {
       return;
     }
 
+    // Check if room has ended - prevent any new joins (except spectators viewing results)
+    if (room.phase === "ended" && !asSpectator) {
+      this.sendError(
+        client,
+        "GAME_ENDED",
+        "This game has ended. Please join a different room.",
+      );
+      return;
+    }
+
     // Check if lobby is locked (after waiting period expired)
     const extended = this.extendedState.get(roomId);
     if (extended?.lobbyLocked && !asSpectator && client.isAgent) {
@@ -2484,13 +2494,38 @@ export class WebSocketRelayServer {
       `Game ended in room ${roomId}: ${crewmatesWon ? "Crewmates" : "Impostors"} win by ${reason}. Pot: ${totalPot.toString()} distributed to ${winners.length} winners.`,
     );
 
+    // Auto-remove all players and spectators from the ended room after a short delay
+    // This gives clients time to receive the game_ended event before being removed
+    setTimeout(() => {
+      // Remove all players from the room
+      for (const player of [...room.players]) {
+        const client = this.findClientByAddress(player.address);
+        if (client) {
+          client.roomId = undefined;
+          logger.info(`Auto-removed player ${player.address} from ended room ${roomId}`);
+        }
+      }
+      room.players = [];
+
+      // Remove all spectators from the room
+      for (const spectatorId of [...room.spectators]) {
+        const client = this.clients.get(spectatorId);
+        if (client) {
+          client.roomId = undefined;
+        }
+      }
+      room.spectators = [];
+
+      this.broadcastRoomList();
+    }, 5000); // 5 second delay to let clients receive game_ended event
+
     // Dynamic room cleanup: Delete room after delay
     setTimeout(() => {
       this.rooms.delete(roomId);
       this.extendedState.delete(roomId);
       logger.info(`Room ${roomId} deleted after game end`);
       this.broadcastRoomList();
-    }, 300000); // Wait 5 minutes before deleting ended room
+    }, 60000); // Reduced to 1 minute since players are already removed
   }
 
   // ============ HELPER METHODS ============
