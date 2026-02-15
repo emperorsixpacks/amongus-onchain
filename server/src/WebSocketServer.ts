@@ -21,18 +21,12 @@ import { databaseService } from "./DatabaseService.js";
 
 const logger = createLogger("websocket-server");
 
-// Phase timing constants
+// Room management constants
+const MAX_PLAYERS_PER_ROOM = 10;
+const MIN_PLAYERS_TO_START = 2;
 const DISCUSSION_DURATION = 30000; // 30 seconds
 const VOTING_DURATION = 30000; // 30 seconds
 const EJECTION_DURATION = 5000; // 5 seconds
-
-// Room management constants
-const MAX_ROOMS = 3;
-const MAX_PLAYERS_PER_ROOM = 10;
-const MIN_PLAYERS_TO_START = 2;
-const FILL_WAIT_DURATION = 30000; // 30 seconds to wait for room to fill after min players
-const MIN_PLAYERS_WAIT_DURATION = 120000; // 2 minutes to wait for min players before deleting room
-const COOLDOWN_DURATION = 600000; // 10 minutes cooldown after game ends
 
 interface Client {
   id: string;
@@ -49,18 +43,6 @@ export interface WebSocketServerConfig {
   host?: string;
 }
 
-// Room slot state for automatic management
-type RoomSlotState = "active" | "cooldown" | "empty";
-
-interface RoomSlot {
-  id: number;
-  state: RoomSlotState;
-  roomId: string | null;
-  cooldownEndTime: number | null;
-  fillTimer: NodeJS.Timeout | null;
-  minPlayersTimer: NodeJS.Timeout | null;
-}
-
 // Extended room state with game mechanics
 interface ExtendedRoomState extends RoomState {
   impostors: Set<string>;
@@ -69,7 +51,6 @@ interface ExtendedRoomState extends RoomState {
   currentRound: number;
   currentPhase: GamePhase;
   phaseTimer: NodeJS.Timeout | null;
-  slotId: number; // Which slot this room belongs to
 }
 
 export class WebSocketRelayServer {
@@ -77,7 +58,6 @@ export class WebSocketRelayServer {
   private clients: Map<string, Client> = new Map();
   private rooms: Map<string, RoomState> = new Map();
   private extendedState: Map<string, ExtendedRoomState> = new Map();
-  private roomSlots: RoomSlot[] = [];
   private agentStats: Map<string, AgentStats> = new Map(); // Track agent statistics
   private gameStateManager: GameStateManager;
   private config: WebSocketServerConfig;
@@ -85,18 +65,6 @@ export class WebSocketRelayServer {
   constructor(config: WebSocketServerConfig) {
     this.config = config;
     this.gameStateManager = new GameStateManager();
-
-    // Initialize room slots
-    for (let i = 0; i < MAX_ROOMS; i++) {
-      this.roomSlots.push({
-        id: i,
-        state: "empty",
-        roomId: null,
-        cooldownEndTime: null,
-        fillTimer: null,
-        minPlayersTimer: null,
-      });
-    }
   }
 
   start(): void {
@@ -109,8 +77,6 @@ export class WebSocketRelayServer {
       logger.info(
         `WebSocket server listening on ${this.config.host || "0.0.0.0"}:${this.config.port}`,
       );
-      // Auto-create rooms for all slots on server start
-      this.initializeRoomSlots();
     });
 
     this.wss.on("connection", (ws, req) => {
@@ -138,282 +104,9 @@ export class WebSocketRelayServer {
     this.wss.on("error", (error) => {
       logger.error(`Server error: ${error}`);
     });
-
-    // Initialize room slots immediately since we're sharing the HTTP listener
-    this.initializeRoomSlots();
   }
 
-  // ============ AUTOMATIC ROOM MANAGEMENT ============
-
-  private initializeRoomSlots(): void {
-    logger.info("Initializing room slots...");
-    for (const slot of this.roomSlots) {
-      this.createRoomForSlot(slot.id);
-    }
-  }
-
-  private createRoomForSlot(slotId: number): void {
-    const slot = this.roomSlots[slotId];
-    if (!slot || slot.state !== "empty") return;
-
-    const roomId = `game-${slotId + 1}-${uuidv4().slice(0, 6)}`;
-    const room: RoomState = {
-      roomId,
-      players: [],
-      spectators: [],
-      maxPlayers: MAX_PLAYERS_PER_ROOM,
-      impostorCount: 2,
-      phase: "lobby",
-      createdAt: Date.now(),
-    };
-
-    this.rooms.set(roomId, room);
-    slot.state = "active";
-    slot.roomId = roomId;
-    slot.cooldownEndTime = null;
-
-    // Persist to database (background)
-    databaseService.createGame(roomId);
-
-    logger.info(`Room ${roomId} created for slot ${slotId}`);
-
-    // Start timer to check for minimum players
-    slot.minPlayersTimer = setTimeout(() => {
-      this.checkMinPlayers(slotId);
-    }, MIN_PLAYERS_WAIT_DURATION);
-
-    this.broadcastRoomList();
-
-    // Broadcast new room available to all agents
-    this.broadcastToAll({
-      type: "server:room_available",
-      roomId,
-      slotId,
-    } as any);
-  }
-
-  private checkMinPlayers(slotId: number): void {
-    const slot = this.roomSlots[slotId];
-    if (!slot || !slot.roomId) return;
-
-    const room = this.rooms.get(slot.roomId);
-    if (!room || room.phase !== "lobby") return;
-
-    if (room.players.length < MIN_PLAYERS_TO_START) {
-      logger.info(
-        `Room ${slot.roomId} has ${room.players.length} players (need ${MIN_PLAYERS_TO_START}), deleting and starting cooldown`,
-      );
-      this.deleteRoomAndCooldown(slotId);
-    }
-  }
-
-  private startFillTimer(slotId: number): void {
-    const slot = this.roomSlots[slotId];
-    if (!slot || slot.fillTimer) return;
-
-    logger.info(
-      `Starting fill timer for slot ${slotId} (${FILL_WAIT_DURATION / 1000}s to reach max players)`,
-    );
-
-    slot.fillTimer = setTimeout(() => {
-      this.onFillTimerExpired(slotId);
-    }, FILL_WAIT_DURATION);
-  }
-
-  private onFillTimerExpired(slotId: number): void {
-    const slot = this.roomSlots[slotId];
-    if (!slot || !slot.roomId) return;
-
-    const room = this.rooms.get(slot.roomId);
-    if (!room || room.phase !== "lobby") return;
-
-    slot.fillTimer = null;
-
-    if (room.players.length >= MIN_PLAYERS_TO_START) {
-      logger.info(
-        `Fill timer expired for slot ${slotId}, starting game with ${room.players.length} players`,
-      );
-      this.autoStartGame(slot.roomId);
-    }
-  }
-
-  private async deleteRoomAndCooldown(slotId: number): Promise<void> {
-    const slot = this.roomSlots[slotId];
-    if (!slot) return;
-
-    // Clear timers
-    if (slot.fillTimer) {
-      clearTimeout(slot.fillTimer);
-      slot.fillTimer = null;
-    }
-    if (slot.minPlayersTimer) {
-      clearTimeout(slot.minPlayersTimer);
-      slot.minPlayersTimer = null;
-    }
-
-    // Delete the room
-    if (slot.roomId) {
-      const room = this.rooms.get(slot.roomId);
-      if (room) {
-        // Refund wagers if game hasn't ended (i.e., room closed before game started)
-        if (room.phase !== "ended") {
-          const refunded = wagerService.refundGame(slot.roomId);
-          if (refunded) {
-            logger.info(`Refunded wagers for cancelled room ${slot.roomId}`);
-          }
-
-          // Cancel game on-chain if it was playing
-          if (room.phase === "playing") {
-            const roomIdToCancel = slot.roomId;
-            contractService
-              .cancelGame(roomIdToCancel)
-              .then((success) => {
-                if (success) {
-                  logger.info(
-                    `Game ${roomIdToCancel} cancelled on-chain successfully`,
-                  );
-                } else {
-                  logger.warn(
-                    `Failed to cancel game ${roomIdToCancel} on-chain`,
-                  );
-                }
-              })
-              .catch((err) => {
-                logger.error(
-                  `Error cancelling game ${roomIdToCancel} on-chain:`,
-                  err,
-                );
-              });
-          }
-        }
-
-        // Notify players
-        this.broadcastToRoom(slot.roomId, {
-          type: "server:error",
-          code: "ROOM_CLOSED",
-          message:
-            "Room closed due to insufficient players. Wagers have been refunded.",
-        });
-
-        // Remove players from room
-        for (const player of room.players) {
-          const client = this.findClientByAddress(player.address);
-          if (client) {
-            client.roomId = undefined;
-            // Send updated balance after refund
-            const balance = await wagerService.getBalance(player.address);
-            this.send(client, {
-              type: "server:balance",
-              address: player.address,
-              balance: balance.toString(),
-              wagerAmount: wagerService.getWagerAmount().toString(),
-              timestamp: Date.now(),
-            });
-          }
-        }
-        for (const specId of room.spectators) {
-          const client = this.clients.get(specId);
-          if (client) {
-            client.roomId = undefined;
-          }
-        }
-      }
-
-      this.rooms.delete(slot.roomId);
-      this.extendedState.delete(slot.roomId);
-    }
-
-    // Start cooldown
-    slot.state = "cooldown";
-    slot.roomId = null;
-    slot.cooldownEndTime = Date.now() + COOLDOWN_DURATION;
-
-    logger.info(
-      `Slot ${slotId} entering cooldown until ${new Date(slot.cooldownEndTime).toISOString()}`,
-    );
-
-    this.broadcastRoomList();
-
-    // Schedule room creation after cooldown
-    setTimeout(() => {
-      this.onCooldownExpired(slotId);
-    }, COOLDOWN_DURATION);
-  }
-
-  private onCooldownExpired(slotId: number): void {
-    const slot = this.roomSlots[slotId];
-    if (!slot || slot.state !== "cooldown") return;
-
-    logger.info(`Cooldown expired for slot ${slotId}, creating new room`);
-    slot.state = "empty";
-    slot.cooldownEndTime = null;
-    this.createRoomForSlot(slotId);
-  }
-
-  private onPlayerJoinedRoom(roomId: string): void {
-    const room = this.rooms.get(roomId);
-    if (!room || room.phase !== "lobby") return;
-
-    // Find slot for this room
-    const slot = this.roomSlots.find((s) => s.roomId === roomId);
-    if (!slot) return;
-
-    // Clear min players timer since we have activity
-    if (slot.minPlayersTimer) {
-      clearTimeout(slot.minPlayersTimer);
-      slot.minPlayersTimer = null;
-    }
-
-    // Check if we should start the game
-    if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
-      // Room is full, start immediately
-      logger.info(
-        `Room ${roomId} is full (${room.players.length} players), starting game`,
-      );
-      if (slot.fillTimer) {
-        clearTimeout(slot.fillTimer);
-        slot.fillTimer = null;
-      }
-      this.autoStartGame(roomId);
-    } else if (room.players.length >= MIN_PLAYERS_TO_START) {
-      // Start fill timer if not already running
-      if (!slot.fillTimer) {
-        this.startFillTimer(slot.id);
-      }
-    } else {
-      // Reset min players timer
-      slot.minPlayersTimer = setTimeout(() => {
-        this.checkMinPlayers(slot.id);
-      }, MIN_PLAYERS_WAIT_DURATION);
-    }
-  }
-
-  private autoStartGame(roomId: string): void {
-    const room = this.rooms.get(roomId);
-    if (!room || room.phase !== "lobby") return;
-
-    if (room.players.length < MIN_PLAYERS_TO_START) {
-      logger.warn(
-        `Cannot auto-start ${roomId}: only ${room.players.length} players (need ${MIN_PLAYERS_TO_START})`,
-      );
-      return;
-    }
-
-    // Find and clear slot timers
-    const slot = this.roomSlots.find((s) => s.roomId === roomId);
-    if (slot) {
-      if (slot.fillTimer) {
-        clearTimeout(slot.fillTimer);
-        slot.fillTimer = null;
-      }
-      if (slot.minPlayersTimer) {
-        clearTimeout(slot.minPlayersTimer);
-        slot.minPlayersTimer = null;
-      }
-    }
-
-    this.startGameInternal(roomId);
-  }
+  // ============ ROOM MANAGEMENT ============
 
   private broadcastToAll(message: ServerMessage): void {
     for (const client of this.clients.values()) {
@@ -490,11 +183,11 @@ export class WebSocketRelayServer {
         break;
 
       case "client:create_room":
-        // Manual room creation disabled - server manages rooms automatically
-        this.sendError(
+        this.handleCreateRoom(
           client,
-          "MANUAL_CREATION_DISABLED",
-          "Rooms are created automatically by the server",
+          message.maxPlayers,
+          message.impostorCount,
+          message.wagerAmount,
         );
         break;
 
@@ -512,12 +205,7 @@ export class WebSocketRelayServer {
         break;
 
       case "client:start_game":
-        // Manual game start disabled - games start automatically
-        this.sendError(
-          client,
-          "MANUAL_START_DISABLED",
-          "Games start automatically when enough players join",
-        );
+        this.handleStartGame(client, message.roomId);
         break;
 
       // Legacy agent messages (for backwards compat)
@@ -901,7 +589,14 @@ export class WebSocketRelayServer {
         );
 
         // Sync to in-memory tracker
-        wagerService.syncOnChainWager(roomId, client.address || "");
+        const customWagerAmount = room.wagerAmount
+          ? BigInt(room.wagerAmount)
+          : undefined;
+        wagerService.syncOnChainWager(
+          roomId,
+          client.address || "",
+          customWagerAmount,
+        );
 
         // Complete the join
         const playerState: PlayerState = {
@@ -949,6 +644,9 @@ export class WebSocketRelayServer {
           vaultAddress: contractService.getVaultAddress() || "",
           timestamp: Date.now(),
         });
+        logger.info(
+          `Player ${client.name} needs to wager before joining room ${roomId} (sent server:wager_required with gameId=${roomId})`,
+        );
         logger.info(
           `Player ${client.name} needs to wager before joining room ${roomId}`,
         );
@@ -998,20 +696,165 @@ export class WebSocketRelayServer {
     client.roomId = undefined;
     logger.info(`Client ${client.name} left room ${roomId}`);
 
-    // Don't delete rooms when empty - keep them visible for reconnecting
-    // Only delete rooms that have ended (handled in endGame)
-    // But clean up extended state if the game ended and no one is in the room
+    // Dynamic room cleanup: Delete room if it's empty in lobby or ended phase
     if (
       room.players.length === 0 &&
       room.spectators.length === 0 &&
-      room.phase === "ended"
+      (room.phase === "lobby" || room.phase === "ended")
     ) {
       this.rooms.delete(roomId);
       this.extendedState.delete(roomId);
-      logger.info(`Room ${roomId} deleted (ended and empty)`);
+      logger.info(`Room ${roomId} deleted (empty in ${room.phase} phase)`);
     }
 
     this.broadcastRoomList();
+  }
+
+  public createRoom(
+    creatorAddress: string | undefined,
+    maxPlayers = 10,
+    impostorCount = 2,
+    wagerAmount?: string,
+  ): RoomState | { error: string } {
+    // Limit: one active room per creator
+    if (creatorAddress) {
+      const existingRoom = Array.from(this.rooms.values()).find(
+        (r) =>
+          r.creator?.toLowerCase() === creatorAddress.toLowerCase() &&
+          r.phase !== "ended",
+      );
+
+      if (existingRoom) {
+        return {
+          error:
+            "You already have an active room. You can only create one room at a time.",
+        };
+      }
+    }
+
+    const roomId = `room-${uuidv4().slice(0, 6)}`;
+    const room: RoomState = {
+      roomId,
+      players: [],
+      spectators: [],
+      maxPlayers: Math.min(maxPlayers, MAX_PLAYERS_PER_ROOM),
+      impostorCount,
+      phase: "lobby",
+      createdAt: Date.now(),
+      creator: creatorAddress,
+      wagerAmount: wagerAmount || wagerService.getWagerAmount().toString(),
+    };
+
+    const extended: ExtendedRoomState = {
+      ...room,
+      impostors: new Set(),
+      votes: new Map(),
+      deadBodies: [],
+      currentRound: 0,
+      currentPhase: room.phase as any, // Lobby
+      phaseTimer: null,
+    };
+
+    this.rooms.set(roomId, room);
+    this.extendedState.set(roomId, extended);
+    this.gameStateManager.getOrCreateGame(roomId);
+
+    logger.info(
+      `Dynamic room ${roomId} created by ${creatorAddress || "anonymous"}`,
+    );
+
+    this.broadcastRoomList();
+    return room;
+  }
+
+  private handleCreateRoom(
+    client: Client,
+    maxPlayers = 10,
+    impostorCount = 2,
+    wagerAmount?: string,
+  ): void {
+    const result = this.createRoom(
+      client.address,
+      maxPlayers,
+      impostorCount,
+      wagerAmount,
+    );
+
+    if ("error" in result) {
+      this.send(client, {
+        type: "server:error",
+        message: result.error,
+      });
+      return;
+    }
+
+    this.send(client, {
+      type: "server:room_created",
+      room: result,
+    });
+  }
+
+  private handleStartGame(client: Client, roomId: string): void {
+    const room = this.rooms.get(roomId);
+    const extended = this.extendedState.get(roomId);
+
+    if (!room || !extended) {
+      this.sendError(client, "ROOM_NOT_FOUND", "Room not found");
+      return;
+    }
+
+    if (room.phase !== "lobby") {
+      this.sendError(client, "INVALID_PHASE", "Game already started");
+      return;
+    }
+
+    if (room.players.length < MIN_PLAYERS_TO_START) {
+      this.sendError(
+        client,
+        "NOT_ENOUGH_PLAYERS",
+        `Need at least ${MIN_PLAYERS_TO_START} players to start`,
+      );
+      return;
+    }
+
+    logger.info(`Game in room ${roomId} started manually by ${client.name}`);
+    this.startGameInternal(roomId);
+  }
+
+  private onPlayerJoinedRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room || room.phase !== "lobby") return;
+
+    // Auto-start if reached max players
+    if (room.players.length >= room.maxPlayers) {
+      logger.info(
+        `Room ${roomId} is full (${room.players.length} players), starting game automatically`,
+      );
+      this.startGameInternal(roomId);
+    } else if (room.players.length >= MIN_PLAYERS_TO_START) {
+      // User requested: once 2 agents are in, start (maybe after a small delay)
+      // Check if there are at least 2 agents
+      const agentCount = room.players.filter((p) => {
+        const client = this.findClientByAddress(p.address);
+        return client?.isAgent;
+      }).length;
+
+      if (agentCount >= 2) {
+        logger.info(
+          `Room ${roomId} has ${agentCount} agents, starting game in 5 seconds...`,
+        );
+        setTimeout(() => {
+          const currentRoom = this.rooms.get(roomId);
+          if (
+            currentRoom &&
+            currentRoom.phase === "lobby" &&
+            currentRoom.players.length >= MIN_PLAYERS_TO_START
+          ) {
+            this.startGameInternal(roomId);
+          }
+        }, 5000);
+      }
+    }
   }
 
   private startGameInternal(roomId: string): void {
@@ -1042,10 +885,6 @@ export class WebSocketRelayServer {
       impostorAddresses.push(room.players[idx].address);
     }
 
-    // Find the slot for this room
-    const slot = this.roomSlots.find((s) => s.roomId === roomId);
-    const slotId = slot?.id ?? -1;
-
     // Initialize extended room state
     const extended: ExtendedRoomState = {
       ...room,
@@ -1055,7 +894,6 @@ export class WebSocketRelayServer {
       currentRound: 1,
       currentPhase: 2, // ActionCommit
       phaseTimer: null,
-      slotId,
     };
     this.extendedState.set(roomId, extended);
 
@@ -2541,10 +2379,6 @@ export class WebSocketRelayServer {
       extended.currentPhase = 7; // Ended
     }
 
-    // Find slot
-    const slotId =
-      extended?.slotId ?? this.roomSlots.findIndex((s) => s.roomId === roomId);
-
     // Broadcast game ended with wager info
     this.broadcastToRoom(roomId, {
       type: "server:game_ended",
@@ -2577,17 +2411,13 @@ export class WebSocketRelayServer {
       `Game ended in room ${roomId}: ${crewmatesWon ? "Crewmates" : "Impostors"} win by ${reason}. Pot: ${totalPot.toString()} distributed to ${winners.length} winners.`,
     );
 
-    // Start cooldown for this slot after a short delay (let players see the end screen)
+    // Dynamic room cleanup: Delete room after delay
     setTimeout(() => {
-      if (slotId >= 0) {
-        this.deleteRoomAndCooldown(slotId);
-      } else {
-        // Fallback: just delete the room
-        this.rooms.delete(roomId);
-        this.extendedState.delete(roomId);
-        this.broadcastRoomList();
-      }
-    }, 10000); // 10 second delay before cooldown starts
+      this.rooms.delete(roomId);
+      this.extendedState.delete(roomId);
+      logger.info(`Room ${roomId} deleted after game end`);
+      this.broadcastRoomList();
+    }, 300000); // Wait 5 minutes before deleting ended room
   }
 
   // ============ HELPER METHODS ============
@@ -2620,17 +2450,6 @@ export class WebSocketRelayServer {
       }
     }
 
-    // Build slot info with cooldown times
-    const slots = this.roomSlots.map((slot) => ({
-      id: slot.id,
-      state: slot.state,
-      roomId: slot.roomId,
-      cooldownEndTime: slot.cooldownEndTime,
-      cooldownRemaining: slot.cooldownEndTime
-        ? Math.max(0, slot.cooldownEndTime - Date.now())
-        : null,
-    }));
-
     return {
       connections: {
         total: this.clients.size,
@@ -2639,19 +2458,15 @@ export class WebSocketRelayServer {
       },
       rooms: {
         total: this.rooms.size,
-        maxRooms: MAX_ROOMS,
         lobby: lobbyRooms,
         playing: activeGames,
         totalPlayers,
       },
       limits: {
-        maxRooms: MAX_ROOMS,
         maxPlayersPerRoom: MAX_PLAYERS_PER_ROOM,
         minPlayersToStart: MIN_PLAYERS_TO_START,
-        fillWaitDuration: FILL_WAIT_DURATION,
-        cooldownDuration: COOLDOWN_DURATION,
       },
-      slots,
+      slots: [],
     };
   }
 
@@ -3050,7 +2865,14 @@ export class WebSocketRelayServer {
     }
 
     // Submit wager
-    const result = await wagerService.submitWager(gameId, client.address);
+    const customWagerAmount = room.wagerAmount
+      ? BigInt(room.wagerAmount)
+      : undefined;
+    const result = await wagerService.submitWager(
+      gameId,
+      client.address,
+      customWagerAmount,
+    );
 
     if (!result.success) {
       const balance = await wagerService.getBalance(client.address);
@@ -3058,7 +2880,9 @@ export class WebSocketRelayServer {
         type: "server:wager_failed",
         gameId,
         error: result.error || "Wager failed",
-        requiredAmount: wagerService.getWagerAmount().toString(),
+        requiredAmount: (
+          customWagerAmount || wagerService.getWagerAmount()
+        ).toString(),
         currentBalance: balance.toString(),
         timestamp: Date.now(),
       });

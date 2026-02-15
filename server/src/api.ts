@@ -94,9 +94,17 @@ async function requirePrivyAuth(
     return;
   }
 
+  const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === "development";
+
+
   const privyUser = await privyWalletService.verifyToken(token);
   if (!privyUser) {
-    res.status(401).json({ error: "Invalid or expired Privy token" });
+    res.status(401).json({
+      error: "Invalid or expired Privy token",
+      details: isDev
+        ? "Token verification failed. Check server logs."
+        : undefined,
+    });
     return;
   }
 
@@ -151,6 +159,47 @@ export function createApiServer(
 
   // ============ ROOMS ============
 
+  // Create a new room (requires Privy auth)
+  app.post(
+    "/api/rooms",
+    requirePrivyAuth as any,
+    async (req: PrivyAuthenticatedRequest, res: Response) => {
+      const { maxPlayers, impostorCount, wagerAmount } = req.body;
+      const { walletAddress } = req.privyUser!;
+
+      try {
+        const result = wsServer.createRoom(
+          walletAddress,
+          maxPlayers,
+          impostorCount,
+          wagerAmount,
+        );
+
+        if ("error" in result) {
+          res.status(400).json({ error: result.error });
+          return;
+        }
+
+        res.status(201).json({
+          success: true,
+          room: {
+            roomId: result.roomId,
+            players: result.players,
+            spectators: result.spectators.length,
+            maxPlayers: result.maxPlayers,
+            phase: result.phase,
+            createdAt: result.createdAt,
+            creator: result.creator,
+            wagerAmount: result.wagerAmount,
+          },
+        });
+      } catch (error) {
+        logger.error("Error creating room via API:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
   // Get all rooms and server stats
   app.get("/api/rooms", (_req: Request, res: Response) => {
     const stats = wsServer.getStats();
@@ -167,7 +216,9 @@ export function createApiServer(
         spectators: room.spectators.length,
         maxPlayers: room.maxPlayers,
         phase: room.phase,
+        creator: room.creator,
         createdAt: room.createdAt,
+        wagerAmount: room.wagerAmount,
       })),
       stats,
     });
@@ -190,7 +241,9 @@ export function createApiServer(
         spectators: room.spectators.length,
         maxPlayers: room.maxPlayers,
         phase: room.phase,
+        creator: room.creator,
         createdAt: room.createdAt,
+        wagerAmount: room.wagerAmount,
       });
     },
   );

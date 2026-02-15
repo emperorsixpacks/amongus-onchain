@@ -6,11 +6,11 @@ export interface AgentStats {
   gamesPlayed: number;
   wins: number;
   losses: number;
-  kills: number;           // Total kills as impostor
-  tasksCompleted: number;  // Total tasks completed as crewmate
+  kills: number; // Total kills as impostor
+  tasksCompleted: number; // Total tasks completed as crewmate
   timesImpostor: number;
   timesCrewmate: number;
-  lastSeen: number;        // Timestamp
+  lastSeen: number; // Timestamp
 }
 
 // ============ ENUMS (Mirror from game) ============
@@ -156,6 +156,7 @@ export interface ClientCreateRoomMessage {
   type: "client:create_room";
   maxPlayers?: number;
   impostorCount?: number;
+  wagerAmount?: string; // in wei
 }
 
 export interface ClientJoinRoomMessage {
@@ -178,9 +179,9 @@ export interface ClientStartGameMessage {
 // Legacy aliases
 export interface AgentAuthenticateMessage {
   type: "agent:authenticate";
-  address?: string;           // Optional - if not provided and requestWallet is true, server creates one
-  name?: string;              // Agent display name
-  requestWallet?: boolean;    // If true, server will create a Privy wallet for this agent
+  address?: string; // Optional - if not provided and requestWallet is true, server creates one
+  name?: string; // Agent display name
+  requestWallet?: boolean; // If true, server will create a Privy wallet for this agent
   signature?: string;
 }
 
@@ -308,19 +309,19 @@ export interface AgentUseCamerasMessage {
 
 export interface OperatorWithdrawRequestMessage {
   type: "operator:withdraw_request";
-  operatorKey: string;        // oper_XXXXXXXXXXXX
-  agentAddress: string;       // Target agent wallet address
-  amount?: string;            // Amount in ether, or "max" for full balance
+  operatorKey: string; // oper_XXXXXXXXXXXX
+  agentAddress: string; // Target agent wallet address
+  amount?: string; // Amount in ether, or "max" for full balance
 }
 
 export interface OperatorCreateAgentMessage {
   type: "operator:create_agent";
-  operatorKey: string;        // oper_XXXXXXXXXXXX
+  operatorKey: string; // oper_XXXXXXXXXXXX
 }
 
 export interface OperatorListAgentsMessage {
   type: "operator:list_agents";
-  operatorKey: string;        // oper_XXXXXXXXXXXX
+  operatorKey: string; // oper_XXXXXXXXXXXX
 }
 
 // Room state
@@ -332,6 +333,8 @@ export interface RoomState {
   impostorCount: number;
   phase: "lobby" | "playing" | "ended";
   createdAt: number;
+  creator?: string; // wallet address of creator
+  wagerAmount?: string; // custom wager amount in wei
 }
 
 // Server → Client Messages
@@ -407,19 +410,19 @@ export interface ServerStats {
   };
   rooms: {
     total: number;
-    maxRooms: number;
+    maxRooms?: number;
     lobby: number;
     playing: number;
     totalPlayers: number;
   };
   limits: {
-    maxRooms: number;
+    maxRooms?: number;
     maxPlayersPerRoom: number;
     minPlayersToStart: number;
-    fillWaitDuration: number;
-    cooldownDuration: number;
+    fillWaitDuration?: number;
+    cooldownDuration?: number;
   };
-  slots: RoomSlotInfo[];
+  slots?: RoomSlotInfo[];
 }
 
 export interface ServerRoomListMessage {
@@ -574,18 +577,18 @@ export interface ServerAgentListMessage {
 export interface ServerWalletAssignedMessage {
   type: "server:wallet_assigned";
   success: boolean;
-  address?: string;           // The newly created wallet address
-  userId?: string;            // Privy user ID
-  error?: string;             // Error message if failed
+  address?: string; // The newly created wallet address
+  userId?: string; // Privy user ID
+  error?: string; // Error message if failed
   timestamp: number;
 }
 
 export interface ServerAuthenticatedMessage {
   type: "server:authenticated";
   success: boolean;
-  address: string;            // The authenticated wallet address
-  name: string;               // Display name
-  isNewWallet: boolean;       // True if wallet was just created
+  address: string; // The authenticated wallet address
+  name: string; // Display name
+  isNewWallet: boolean; // True if wallet was just created
   timestamp: number;
 }
 
@@ -594,31 +597,31 @@ export interface ServerAuthenticatedMessage {
 export interface ServerBalanceMessage {
   type: "server:balance";
   address: string;
-  balance: string;            // Balance in wei as string
+  balance: string; // Balance in wei as string
   totalDeposited?: string;
   totalWon?: string;
   totalLost?: string;
-  wagerAmount?: string;       // Required wager amount
-  canAfford?: boolean;        // Whether agent can afford the wager
+  wagerAmount?: string; // Required wager amount
+  canAfford?: boolean; // Whether agent can afford the wager
   timestamp: number;
 }
 
 export interface ServerWagerRequiredMessage {
   type: "server:wager_required";
   gameId: string;
-  amount: string;             // Required wager amount in wei
-  currentBalance: string;     // Agent's current balance
-  canAfford: boolean;         // Whether agent can afford the wager
-  vaultAddress?: string;      // WagerVault contract address for on-chain wagering
+  amount: string; // Required wager amount in wei
+  currentBalance: string; // Agent's current balance
+  canAfford: boolean; // Whether agent can afford the wager
+  vaultAddress?: string; // WagerVault contract address for on-chain wagering
   timestamp: number;
 }
 
 export interface ServerWagerAcceptedMessage {
   type: "server:wager_accepted";
   gameId: string;
-  amount: string;             // Amount wagered
-  newBalance: string;         // Balance after wager
-  totalPot: string;           // Total pot for the game
+  amount: string; // Amount wagered
+  newBalance: string; // Balance after wager
+  totalPot: string; // Total pot for the game
   timestamp: number;
 }
 
@@ -626,7 +629,7 @@ export interface ServerWagerFailedMessage {
   type: "server:wager_failed";
   gameId: string;
   reason?: string;
-  error?: string;             // Detailed error message
+  error?: string; // Detailed error message
   requiredAmount: string;
   currentBalance: string;
   timestamp: number;

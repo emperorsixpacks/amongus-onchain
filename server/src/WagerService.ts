@@ -126,15 +126,17 @@ export class WagerService {
   async submitWager(
     gameId: string,
     address: string,
+    customWagerAmount?: bigint,
   ): Promise<{ success: boolean; error?: string }> {
     const key = address.toLowerCase();
+    const wagerToUse = customWagerAmount || this.wagerAmount;
 
     // Check on-chain balance
     const balance = await this.getBalance(key);
-    if (balance < this.wagerAmount) {
+    if (balance < wagerToUse) {
       return {
         success: false,
-        error: `Insufficient balance. Need ${this.formatMON(this.wagerAmount)} MON, have ${this.formatMON(balance)} MON`,
+        error: `Insufficient balance. Need ${this.formatMON(wagerToUse)} MON, have ${this.formatMON(balance)} MON`,
       };
     }
 
@@ -169,14 +171,14 @@ export class WagerService {
       };
     }
 
-    gameWager.wagers.set(key, this.wagerAmount);
-    gameWager.totalPot += this.wagerAmount;
+    gameWager.wagers.set(key, wagerToUse);
+    gameWager.totalPot += wagerToUse;
 
     // Update database
-    databaseService.updateAgentBalance(address, -this.wagerAmount, "wager");
+    databaseService.updateAgentBalance(address, -wagerToUse, "wager");
 
     logger.info(
-      `Wager submitted: ${address.slice(0, 10)}... wagered ${this.formatMON(this.wagerAmount)} MON for game ${gameId} (TX: ${txHash}, pot: ${this.formatMON(gameWager.totalPot)} MON)`,
+      `Wager submitted: ${address.slice(0, 10)}... wagered ${this.formatMON(wagerToUse)} MON for game ${gameId} (TX: ${txHash}, pot: ${this.formatMON(gameWager.totalPot)} MON)`,
     );
 
     return { success: true };
@@ -194,8 +196,13 @@ export class WagerService {
    * Sync an on-chain wager to in-memory tracker
    * Used when a wager is placed directly on-chain
    */
-  syncOnChainWager(gameId: string, address: string): void {
+  syncOnChainWager(
+    gameId: string,
+    address: string,
+    customWagerAmount?: bigint,
+  ): void {
     const normalizedAddress = address.toLowerCase();
+    const wagerToUse = customWagerAmount || this.wagerAmount;
 
     let gameWager = this.gameWagers.get(gameId);
     if (!gameWager) {
@@ -209,9 +216,11 @@ export class WagerService {
     }
 
     if (!gameWager.wagers.has(normalizedAddress)) {
-      gameWager.wagers.set(normalizedAddress, this.wagerAmount);
-      gameWager.totalPot += this.wagerAmount;
-      logger.info(`Synced on-chain wager for ${address} in game ${gameId}`);
+      gameWager.wagers.set(normalizedAddress, wagerToUse);
+      gameWager.totalPot += wagerToUse;
+      logger.info(
+        `Synced on-chain wager for ${address} in game ${gameId} with amount ${this.formatMON(wagerToUse)} MON`,
+      );
     }
   }
 

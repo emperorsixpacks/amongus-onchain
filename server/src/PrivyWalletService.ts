@@ -323,8 +323,14 @@ export class PrivyWalletService {
         userId: user.id,
         walletAddress: walletAccount.address.toLowerCase(),
       };
-    } catch (error) {
-      logger.error("Failed to verify Privy token:", error);
+    } catch (error: any) {
+      if (error?.message?.includes("Failed to verify authentication token")) {
+        logger.error(
+          "Privy JWT verification failed: The verification key (PRIVY_VERIFICATION_KEY) might be invalid or the token is physically malformed.",
+        );
+      } else {
+        logger.error("Failed to verify Privy token:", error);
+      }
       return null;
     }
   }
