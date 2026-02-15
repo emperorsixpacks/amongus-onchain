@@ -56,23 +56,38 @@ export function GameLobby({
       </div>
 
       {/* Game config */}
-      <div className="p-4 border-b border-slate-700 grid grid-cols-3 gap-4">
-        <div className="flex items-center gap-2 justify-center">
-          <Users className="w-5 h-5 text-blue-400" />
-          <span className="text-slate-300">
-            {config.minPlayers}-{config.maxPlayers} players
-          </span>
+      <div className="p-4 border-b border-slate-700">
+        <div className="grid grid-cols-3 gap-4 mb-3">
+          <div className="flex items-center gap-2 justify-center">
+            <Users className="w-5 h-5 text-blue-400" />
+            <span className="text-slate-300">
+              {config.minPlayers}-{config.maxPlayers} players
+            </span>
+          </div>
+          <div className="flex items-center gap-2 justify-center">
+            <Coins className="w-5 h-5 text-yellow-400" />
+            <span className="text-slate-300">
+              {formatEther(config.wagerAmount)} wager
+            </span>
+          </div>
+          <div className="flex items-center gap-2 justify-center">
+            <Clock className="w-5 h-5 text-green-400" />
+            <span className="text-slate-300">{config.tasksPerPlayer} tasks</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 justify-center">
-          <Coins className="w-5 h-5 text-yellow-400" />
-          <span className="text-slate-300">
-            {formatEther(config.wagerAmount)} wager
-          </span>
-        </div>
-        <div className="flex items-center gap-2 justify-center">
-          <Clock className="w-5 h-5 text-green-400" />
-          <span className="text-slate-300">{config.tasksPerPlayer} tasks</span>
-        </div>
+
+        {/* Total Pot Display */}
+        {players.length > 0 && (
+          <div className="bg-gradient-to-r from-yellow-900/30 to-amber-900/30 border border-yellow-500/30 rounded-lg p-3 text-center">
+            <div className="text-xs text-yellow-400/70 uppercase mb-1">Total Prize Pool</div>
+            <div className="text-2xl font-black text-yellow-400">
+              {formatEther(config.wagerAmount * BigInt(players.length))} MON
+            </div>
+            <div className="text-xs text-slate-400 mt-1">
+              {players.length} player{players.length !== 1 ? 's' : ''} × {formatEther(config.wagerAmount)} MON
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Players */}

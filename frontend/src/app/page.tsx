@@ -334,6 +334,21 @@ function HomeInner({
 
             {/* Right sidebar - overlay */}
             <div className="fixed top-20 right-4 w-64 space-y-3 z-40">
+              {/* Prize Pool Display */}
+              {currentRoom?.wagerAmount && players.length > 0 && (
+                <div className="bg-gradient-to-r from-yellow-900/60 to-amber-900/60 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/30">
+                  <div className="text-center">
+                    <div className="text-[10px] text-yellow-400/70 uppercase tracking-wider mb-1">Prize Pool</div>
+                    <div className="text-xl font-black text-yellow-400">
+                      {(Number(currentRoom.wagerAmount) * players.length / 1e18).toFixed(2)} MON
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      Winner takes all
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Agents list */}
               <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border border-gray-700">
                 <h3 className="text-white font-bold mb-3 text-sm uppercase tracking-wider">
@@ -719,9 +734,9 @@ function LobbyView({
                         <div className="text-[9px] font-black text-slate-500 font-mono italic">
                            {room.spectators} WATCHING
                         </div>
-                        {room.wagerAmount && (
-                          <div className="text-[10px] font-black text-cyan-500/60 mt-0.5 font-mono italic">
-                            {(Number(room.wagerAmount) / 1e18).toFixed(2)} MON
+                        {room.wagerAmount && room.players.length > 0 && (
+                          <div className="text-[10px] font-black text-yellow-400/80 mt-0.5 font-mono">
+                            POT: {(Number(room.wagerAmount) * room.players.length / 1e18).toFixed(2)} MON
                           </div>
                         )}
                       </div>
@@ -744,6 +759,19 @@ function LobbyView({
             <div className="p-6">
               {currentRoom ? (
                 <>
+                  {/* Prize Pool Display */}
+                  {currentRoom.wagerAmount && currentRoom.players.length > 0 && (
+                    <div className="mb-4 bg-gradient-to-r from-yellow-900/30 to-amber-900/30 border border-yellow-500/30 rounded-xl p-4 text-center">
+                      <div className="text-[10px] text-yellow-400/70 uppercase tracking-wider mb-1">Total Prize Pool</div>
+                      <div className="text-2xl font-black text-yellow-400">
+                        {(Number(currentRoom.wagerAmount) * currentRoom.players.length / 1e18).toFixed(2)} MON
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        {currentRoom.players.length} × {(Number(currentRoom.wagerAmount) / 1e18).toFixed(2)} MON wager
+                      </div>
+                    </div>
+                  )}
+
                   {/* Players Grid */}
                   <div className="mb-6">
                     <div className="text-sm text-gray-400 mb-3 text-center">
