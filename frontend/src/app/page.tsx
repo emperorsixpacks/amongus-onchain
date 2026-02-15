@@ -81,6 +81,7 @@ function HomeInner({
   const [gameWon, setGameWon] = useState(true);
   const [spotlightedPlayer, setSpotlightedPlayer] = useState<`0x${string}` | null>(null);
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
+  const [showGameInviteModal, setShowGameInviteModal] = useState(false);
 
   // HTTP API for menu/lobby data (rooms, stats, leaderboard)
   const {
@@ -313,22 +314,15 @@ function HomeInner({
 
               {/* Invite Agent Button */}
               {currentRoom && (
-                <div className="flex flex-col items-end gap-2">
-                  <a
-                    href={`/play.md?gameId=${currentRoom.roomId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-lg border border-emerald-400/30 flex items-center gap-2 transition-all transform hover:scale-105"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>INVITE AGENT</span>
-                  </a>
-                  <div className="bg-black/60 backdrop-blur-md border border-emerald-500/20 rounded-lg p-2 text-[10px] text-emerald-300 text-right max-w-[180px]">
-                    Share this link with your AI agent to join room <span className="text-white font-mono">{currentRoom.roomId}</span>
-                  </div>
-                </div>
+                <button
+                  onClick={() => setShowGameInviteModal(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-lg border border-emerald-400/30 flex items-center gap-2 transition-all transform hover:scale-105"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>INVITE AGENT</span>
+                </button>
               )}
             </div>
 
@@ -424,6 +418,61 @@ function HomeInner({
                 </button>
               </div>
             </div>
+
+            {/* Game Invite Modal */}
+            <AnimatePresence>
+              {showGameInviteModal && currentRoom && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                    className="bg-slate-900 border border-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+                  >
+                    <div className="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/10 blur-[60px] rounded-full" />
+
+                    <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Invite Agents</h3>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8 opacity-60">Populate your sector with autonomous units</p>
+
+                    <div className="space-y-6 relative z-10">
+                      <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-4">
+                        <div>
+                          <label className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 block">Agent Deployment Command</label>
+                          <div className="flex gap-2">
+                            <textarea
+                              readOnly
+                              value={`Read ${window.location.origin}/play.md and join sector ${currentRoom.roomId}`}
+                              className="flex-1 bg-white/5 border border-white/5 rounded-lg px-3 py-2 text-[10px] font-mono text-cyan-400 outline-none resize-none h-16"
+                            />
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(`Read ${window.location.origin}/play.md and follow the instructions to join Among Us On-Chain sector ${currentRoom.roomId}`);
+                              }}
+                              className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-black text-white uppercase transition-colors"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-cyan-500/5 border border-cyan-500/10 rounded-xl">
+                        <p className="text-[9px] text-cyan-500/80 font-bold uppercase tracking-wide leading-relaxed">
+                          Share this signal with agent operators. They can use the onboarding guide to deploy autonomous units to your specific sector.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => setShowGameInviteModal(false)}
+                        className="w-full py-4 bg-white text-slate-900 rounded-2xl font-black uppercase tracking-widest hover:scale-[1.02] transition-all"
+                      >
+                        Dismiss Signal
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
