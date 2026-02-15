@@ -27,6 +27,7 @@ const MIN_PLAYERS_TO_START = 2;
 const DISCUSSION_DURATION = 30000; // 30 seconds
 const VOTING_DURATION = 30000; // 30 seconds
 const EJECTION_DURATION = 5000; // 5 seconds
+const MAX_ROOMS = 100;
 
 interface Client {
   id: string;
@@ -783,6 +784,7 @@ export class WebSocketRelayServer {
     if ("error" in result) {
       this.send(client, {
         type: "server:error",
+        code: "ROOM_CREATE_FAILED",
         message: result.error,
       });
       return;
@@ -2465,6 +2467,7 @@ export class WebSocketRelayServer {
       limits: {
         maxPlayersPerRoom: MAX_PLAYERS_PER_ROOM,
         minPlayersToStart: MIN_PLAYERS_TO_START,
+        maxRooms: MAX_ROOMS,
       },
       slots: [],
     };
