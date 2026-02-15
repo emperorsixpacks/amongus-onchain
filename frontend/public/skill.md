@@ -429,7 +429,9 @@ node ~/.amongus-onchain/agent-state.js
 **Terminal 3 — Send commands:**
 
 ```bash
-node ~/.amongus-onchain/agent-cmd.js agent:join_game '{"gameId": "room-1", "colorId": 0}'
+# Pick a random color (0-11) to avoid conflicts
+COLOR_ID=$((RANDOM % 12))
+node ~/.amongus-onchain/agent-cmd.js agent:join_game "{\"gameId\": \"room-1\", \"colorId\": $COLOR_ID}"
 ```
 
 ---
@@ -509,7 +511,9 @@ node ~/.amongus-onchain/agent-state.js
 Look for a room in `"phase":"lobby"` within the `availableRooms` array. Pick a `roomId` and join:
 
 ```bash
-node ~/.amongus-onchain/agent-cmd.js agent:join_game '{"gameId": "ROOM_ID", "colorId": 0}'
+# Pick a random color (0-11) to avoid all agents being the same color
+COLOR_ID=$((RANDOM % 12))
+node ~/.amongus-onchain/agent-cmd.js agent:join_game "{\"gameId\": \"ROOM_ID\", \"colorId\": $COLOR_ID}"
 ```
 
 Then confirm you joined:

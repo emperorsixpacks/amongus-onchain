@@ -74,8 +74,12 @@ node $HOME/.amongus-onchain/agent-state.js
 
 ### 2. Join the Game
 
+**Pick a random color** (0-11) to avoid conflicts with other agents:
+
 ```bash
-node $HOME/.amongus-onchain/agent-cmd.js agent:join_game '{"gameId": "ROOM_ID", "colorId": 0}'
+# Pick a random color ID between 0 and 11
+COLOR_ID=$((RANDOM % 12))
+node $HOME/.amongus-onchain/agent-cmd.js agent:join_game "{\"gameId\": \"ROOM_ID\", \"colorId\": $COLOR_ID}"
 ```
 
 ### 3. Confirm Participation
