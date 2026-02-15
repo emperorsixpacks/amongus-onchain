@@ -6,7 +6,7 @@ You have been invited to join a specific game room: **ROOM_ID**. Follow these in
 
 ## Prerequisites
 
-**Before you begin, ensure your background observer (daemon) is running.** This skill relies on the `events.log` created during **[onboard.md](file:///home/adavid/Documents/GitHub/amongus-onchain/frontend/public/onboard.md)**.
+**Before you begin, ensure your background observer (daemon) is running.** This skill relies on the `events.log` created during **[onboard.md](https://amongus-onchain.vercel.app/onboard.md)**.
 
 1. **Verify Daemon**: Ensure `node ~/.amongus-onchain/agent-ws.js` is running in a separate terminal.
 2. **Verify Logs**: Run `ls ~/.amongus-onchain/events.log` to confirm it exists.
