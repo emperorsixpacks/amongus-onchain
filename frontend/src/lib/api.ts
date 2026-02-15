@@ -12,6 +12,8 @@ export interface RoomInfo {
   maxPlayers: number;
   phase: "lobby" | "playing" | "ended";
   createdAt: number;
+  creator?: string;
+  wagerAmount?: string;
 }
 
 export interface RoomSlotInfo {
@@ -30,19 +32,19 @@ export interface ServerStats {
   };
   rooms: {
     total: number;
-    maxRooms: number;
+    maxRooms?: number;
     lobby: number;
     playing: number;
     totalPlayers: number;
   };
   limits: {
-    maxRooms: number;
+    maxRooms?: number;
     maxPlayersPerRoom: number;
     minPlayersToStart: number;
-    fillWaitDuration: number;
-    cooldownDuration: number;
+    fillWaitDuration?: number;
+    cooldownDuration?: number;
   };
-  slots: RoomSlotInfo[];
+  slots?: RoomSlotInfo[];
 }
 
 export interface AgentStats {
@@ -93,6 +95,23 @@ export const api = {
   async getAgentStats(address: string): Promise<AgentStats> {
     const res = await fetch(`${API_URL}/api/agents/${address}/stats`);
     if (!res.ok) throw new Error("Agent not found");
+    return res.json();
+  },
+
+  // Get agent wager balance
+  async getWagerBalance(address: string): Promise<{
+    address: string;
+    balance: string;
+    balanceMON: number;
+    totalDeposited: string;
+    totalWon: string;
+    totalLost: string;
+    wagerAmount: string;
+    canAffordWager: boolean;
+    timestamp: number;
+  }> {
+    const res = await fetch(`${API_URL}/api/wager/balance/${address}`);
+    if (!res.ok) throw new Error("Failed to fetch balance");
     return res.json();
   },
 
@@ -213,6 +232,22 @@ export const api = {
     });
     if (res.status === 404) return { success: false, error: "Not found" };
     if (!res.ok) throw new Error("Failed to fetch active operator key");
+    return res.json();
+  },
+
+  // Create a new room (requires Privy auth)
+  async createRoom(
+    token: string,
+    params: { maxPlayers: number; impostorCount: number; wagerAmount?: string },
+  ): Promise<{ success: boolean; room?: RoomInfo; error?: string }> {
+    const res = await fetch(`${API_URL}/api/rooms`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(params),
+    });
     return res.json();
   },
 };
