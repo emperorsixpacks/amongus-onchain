@@ -15,7 +15,7 @@ export function TaskBar({ completed, total }: TaskBarProps) {
       <div className="flex flex-col gap-1">
         {/* Task bar container */}
         <div
-          className="relative w-80 h-6 rounded"
+          className="relative w-48 sm:w-64 md:w-80 h-5 sm:h-6 rounded"
           style={{
             backgroundColor: "#1a1a2e",
             border: "2px solid #333",
@@ -47,7 +47,7 @@ export function TaskBar({ completed, total }: TaskBarProps) {
 
         {/* Label */}
         <span
-          className="text-white text-sm font-bold tracking-wider"
+          className="text-white text-xs sm:text-sm font-bold tracking-wider"
           style={{
             textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
             fontFamily: "'Comic Sans MS', cursive",

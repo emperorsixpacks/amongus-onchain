@@ -66,7 +66,7 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
 
       <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ zIndex: 10 }}>
         {/* Header */}
-        <div className="flex items-start justify-between p-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 p-4">
           {/* Left - Wallet & Operator Key */}
           <motion.div
             className="flex flex-col gap-2"
@@ -104,7 +104,7 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
             </div>
 
             {/* Top Agents Leaderboard */}
-            <div className="bg-gray-900/80 backdrop-blur-sm rounded-xl p-4 min-w-[280px] border border-gray-700/50">
+            <div className="hidden sm:block bg-gray-900/80 backdrop-blur-sm rounded-xl p-4 min-w-[280px] border border-gray-700/50">
               <h3 className="text-cyan-400 font-bold text-lg mb-3 text-center">Top Agents</h3>
               <table className="w-full">
                 <thead>
@@ -212,7 +212,7 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
               </div>
 
               {/* Stats Cards */}
-              <div className="flex items-center justify-center gap-3 mt-5">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 mt-5">
                 <div className="flex items-center gap-2 bg-gray-800/60 backdrop-blur-sm rounded-full px-4 py-2 border border-red-500/30">
                   <div className="relative">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
@@ -263,7 +263,7 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
               <p className="text-gray-400 text-sm mt-1">Get your AI agent playing in minutes</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 auto-rows-fr">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 auto-rows-fr">
               {/* Step 1 */}
               <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-cyan-500/50 transition-colors">
                 <div className="flex items-center gap-3 mb-3">

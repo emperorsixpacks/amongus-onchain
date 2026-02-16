@@ -313,12 +313,12 @@ function HomeInner({
                   {currentRoom && (
                     <button
                       onClick={() => setShowGameInviteModal(true)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg border border-emerald-400/30 flex items-center gap-2 transition-all transform hover:scale-105"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 sm:px-4 rounded-xl shadow-lg border border-emerald-400/30 flex items-center gap-2 transition-all transform hover:scale-105"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
-                      <span className="text-sm">INVITE AGENT</span>
+                      <span className="hidden sm:inline text-sm">INVITE AGENT</span>
                     </button>
                   )}
                 </div>
@@ -330,11 +330,11 @@ function HomeInner({
               <OperatorKeyPanel />
             </div>
 
-            {/* Right sidebar - overlay */}
-            <div className="fixed top-20 right-4 w-64 space-y-3 z-40">
+            {/* Right sidebar - overlay (bottom sheet on mobile, sidebar on desktop) */}
+            <div className="fixed bottom-0 left-0 right-0 sm:top-20 sm:bottom-auto sm:left-auto sm:right-4 sm:w-64 flex flex-row sm:flex-col sm:space-y-3 overflow-x-auto sm:overflow-x-visible gap-2 sm:gap-0 p-2 sm:p-0 bg-black/80 sm:bg-transparent z-40">
               {/* Prize Pool Display */}
               {currentRoom?.wagerAmount && players.length > 0 && (
-                <div className="bg-gradient-to-r from-yellow-900/60 to-amber-900/60 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/30">
+                <div className="flex-shrink-0 min-w-[140px] sm:min-w-0 bg-gradient-to-r from-yellow-900/60 to-amber-900/60 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/30">
                   <div className="text-center">
                     <div className="text-[10px] text-yellow-400/70 uppercase tracking-wider mb-1">Prize Pool</div>
                     <div className="text-xl font-black text-yellow-400">
@@ -348,7 +348,7 @@ function HomeInner({
               )}
 
               {/* Agents list */}
-              <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 border border-gray-700">
+              <div className="flex-shrink-0 min-w-[200px] sm:min-w-0 bg-black/80 backdrop-blur-sm rounded-lg p-3 border border-gray-700">
                 <h3 className="text-white font-bold mb-3 text-sm uppercase tracking-wider">
                   Agents ({players.filter(p => p.isAlive).length}/{players.length} alive)
                 </h3>
@@ -444,13 +444,13 @@ function HomeInner({
                 </div>
               </div>
 
-              {/* Game log */}
-              <div className="bg-black/80 backdrop-blur-sm rounded-lg border border-gray-700">
+              {/* Game log - hidden on mobile */}
+              <div className="hidden sm:block flex-shrink-0 bg-black/80 backdrop-blur-sm rounded-lg border border-gray-700">
                 <GameLogPanel logs={logs} maxHeight="180px" />
               </div>
 
               {/* Spectator controls */}
-              <div className="bg-black/80 backdrop-blur-sm rounded-lg p-3 space-y-2 border border-gray-700">
+              <div className="flex-shrink-0 min-w-[160px] sm:min-w-0 bg-black/80 backdrop-blur-sm rounded-lg p-3 space-y-2 border border-gray-700">
                 <h3 className="text-white font-bold text-sm">Spectator Controls</h3>
                 <p className="text-gray-400 text-xs">
                   Click on an agent to follow them on the map
@@ -481,15 +481,15 @@ function HomeInner({
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    className="bg-slate-900 border border-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+                    className="bg-slate-900 border border-white/10 rounded-[2rem] p-4 sm:p-6 md:p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
                   >
                     <div className="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/10 blur-[60px] rounded-full" />
 
-                    <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Invite Agents</h3>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8 opacity-60">Populate your sector with autonomous units</p>
+                    <h3 className="text-xl sm:text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Invite Agents</h3>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6 sm:mb-8 opacity-60">Populate your sector with autonomous units</p>
 
-                    <div className="space-y-6 relative z-10">
-                      <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-4">
+                    <div className="space-y-4 sm:space-y-6 relative z-10">
+                      <div className="bg-black/40 border border-white/5 rounded-2xl p-3 sm:p-5 space-y-4">
                         <div>
                           <label className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 block">Agent Deployment Command</label>
                           <div className="flex gap-2">
@@ -679,9 +679,9 @@ function LobbyView({
 
   return (
     <SpaceBackground>
-      <div className="min-h-screen p-8">
+      <div className="min-h-screen p-4 sm:p-6 md:p-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-12">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 sm:mb-12">
           <div className="flex flex-col gap-6">
             <button
               onClick={onBack}
@@ -701,7 +701,7 @@ function LobbyView({
           </div>
 
           <div className="text-center">
-            <h1 className="text-6xl font-black text-white tracking-tighter uppercase italic">
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-white tracking-tighter uppercase italic">
               Operation <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Lobby</span>
             </h1>
             <div className="flex items-center justify-center gap-2 mt-2">
@@ -747,7 +747,7 @@ function LobbyView({
                 <motion.div
                   key={room.roomId}
                   whileHover={{ x: 4 }}
-                  className="p-5 rounded-2xl border bg-red-500/[0.03] border-red-500/20 cursor-pointer hover:bg-red-500/[0.06] transition-all relative overflow-hidden group"
+                  className="p-3 sm:p-5 rounded-2xl border bg-red-500/[0.03] border-red-500/20 cursor-pointer hover:bg-red-500/[0.06] transition-all relative overflow-hidden group"
                   onClick={() => onJoinRoom(room.roomId)}
                 >
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 opacity-30 group-hover:opacity-100 transition-opacity" />
@@ -793,7 +793,7 @@ function LobbyView({
                   <motion.div
                     key={room.roomId}
                     whileHover={{ x: 4 }}
-                    className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
+                    className={`p-3 sm:p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
                       currentRoom?.roomId === room.roomId
                         ? "bg-cyan-500/[0.04] border-cyan-500/30 shadow-[0_0_20px_-5px_rgba(6,182,212,0.15)]"
                         : "bg-white/[0.02] border-white/5 hover:border-white/10 hover:bg-white/[0.04]"
@@ -1004,15 +1004,15 @@ function LobbyView({
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="bg-slate-900 border border-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+                className="bg-slate-900 border border-white/10 rounded-[2rem] p-4 sm:p-6 md:p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
               >
                 <div className="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/10 blur-[60px] rounded-full" />
-                
-                <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Invite Agents</h3>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8 opacity-60">Populate your sector with autonomous units</p>
 
-                <div className="space-y-6 relative z-10">
-                  <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-4">
+                <h3 className="text-xl sm:text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Invite Agents</h3>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6 sm:mb-8 opacity-60">Populate your sector with autonomous units</p>
+
+                <div className="space-y-4 sm:space-y-6 relative z-10">
+                  <div className="bg-black/40 border border-white/5 rounded-2xl p-3 sm:p-5 space-y-4">
                     <div>
                       <label className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 block">Agent Deployment Command</label>
                       <div className="flex gap-2">
@@ -1123,7 +1123,7 @@ function CreateRoomModal({
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="bg-slate-900/40 border border-white/10 rounded-[2.5rem] p-10 max-w-lg w-full shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] backdrop-blur-3xl relative overflow-hidden"
+        className="bg-slate-900/40 border border-white/10 rounded-[2.5rem] p-4 sm:p-6 md:p-10 max-w-lg w-full shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] backdrop-blur-3xl relative overflow-hidden"
       >
         {/* Decorative corner glow */}
         <div className="absolute -top-20 -right-20 w-40 h-40 bg-cyan-500/10 blur-[60px] rounded-full" />
@@ -1153,7 +1153,7 @@ function CreateRoomModal({
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payload Capacity</label>
                 <span className="text-xl font-black text-cyan-400 font-mono tracking-tighter">{maxPlayers} UNITS</span>
               </div>
-              <div className="grid grid-cols-5 gap-2 bg-black/30 p-1.5 rounded-2xl border border-white/5">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 bg-black/30 p-1.5 rounded-2xl border border-white/5">
                 {playerOptions.map((num) => (
                   <button
                     key={num}
@@ -1242,7 +1242,7 @@ function CreateRoomModal({
               whileTap={{ scale: 0.98 }}
               onClick={handleCreate}
               disabled={isDeploying}
-              className={`w-full py-6 rounded-3xl bg-white text-slate-900 font-black text-lg uppercase tracking-widest shadow-[0_20px_40px_-15px_rgba(255,255,255,0.2)] hover:shadow-[0_25px_50px_-12px_rgba(255,255,255,0.3)] transition-all flex items-center justify-center gap-3 relative overflow-hidden group ${isDeploying ? "opacity-80 cursor-wait" : ""}`}
+              className={`w-full py-6 rounded-3xl bg-white text-slate-900 font-black text-base sm:text-lg uppercase tracking-widest shadow-[0_20px_40px_-15px_rgba(255,255,255,0.2)] hover:shadow-[0_25px_50px_-12px_rgba(255,255,255,0.3)] transition-all flex items-center justify-center gap-3 relative overflow-hidden group ${isDeploying ? "opacity-80 cursor-wait" : ""}`}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               
