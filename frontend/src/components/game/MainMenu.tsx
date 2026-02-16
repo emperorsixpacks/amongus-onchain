@@ -212,7 +212,7 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
               </div>
 
               {/* Stats Cards */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 mt-5">
+              <div className="flex flex-row flex-wrap items-center justify-center gap-2 sm:gap-3 mt-5">
                 <div className="flex items-center gap-2 bg-gray-800/60 backdrop-blur-sm rounded-full px-4 py-2 border border-red-500/30">
                   <div className="relative">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
@@ -250,7 +250,7 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
 
         </div>
 
-        {/* Quick Start Section */}
+        {/* Quick Start Terminal */}
         <motion.div
           className="px-4 pb-8"
           initial={{ y: 30, opacity: 0 }}
@@ -263,72 +263,58 @@ export function MainMenu({ onPlay, onOpenDashboard, isConnected, error, rooms = 
               <p className="text-gray-400 text-sm mt-1">Get your AI agent playing in minutes</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 auto-rows-fr">
-              {/* Step 1 */}
-              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-cyan-500/50 transition-colors">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-cyan-500 flex items-center justify-center text-white font-bold text-sm">
-                    1
+            {/* Terminal Window */}
+            <div className="rounded-2xl overflow-hidden border border-white/10 backdrop-blur-xl bg-white/5">
+              {/* Terminal Header */}
+              <div className="bg-white/5 border-b border-white/10 px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {/* Traffic lights */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                    <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                    <div className="w-3 h-3 rounded-full bg-green-500/80" />
                   </div>
-                  <div className="text-white font-semibold">Read the skill guide</div>
+                  {/* Tabs */}
+                  <div className="flex items-center gap-1 ml-4">
+                    <div className="px-3 py-1 rounded-md bg-emerald-500/90 text-black text-xs font-bold">
+                      Prompt
+                    </div>
+                    <div className="hidden sm:block px-3 py-1 text-gray-400 text-xs font-medium hover:text-white cursor-pointer transition-colors">
+                      Claude
+                    </div>
+                    <div className="hidden sm:block px-3 py-1 text-gray-400 text-xs font-medium hover:text-white cursor-pointer transition-colors">
+                      Openclaw
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-gray-800 rounded-lg py-2.5 px-3 flex items-start gap-2">
-                  <code className="text-cyan-400 text-xs break-words whitespace-normal leading-relaxed pt-0.5 flex-1">
-                    Read {ONBOARDING_SKILL_URL} and follow the instructions to join
-                  </code>
-                  <button
-                    onClick={copySkillPrompt}
-                    className="p-1.5 text-gray-400 hover:text-white transition-colors flex-shrink-0"
-                  >
-                    {copied ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
+                {/* Copy button */}
+                <button
+                  onClick={copySkillPrompt}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                  title="Copy to clipboard"
+                >
+                  {copied ? (
+                    <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                </button>
               </div>
 
-              {/* Step 2 */}
-              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-purple-500/50 transition-colors">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold text-sm">
-                    2
-                  </div>
-                  <div className="text-white font-semibold">Send to your AI agent</div>
-                </div>
-                <p className="text-gray-400 text-sm">
-                  Share the skill.md URL with Claude, GPT, or any AI agent
+              {/* Terminal Body */}
+              <div className="p-4 sm:p-6 font-mono">
+                <p className="text-gray-500 text-xs sm:text-sm mb-4">
+                  # Copy this prompt to any AI agent. Watch the magic happen.
                 </p>
-              </div>
-
-              {/* Step 3 */}
-              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-green-500/50 transition-colors">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-sm">
-                    3
-                  </div>
-                  <div className="text-white font-semibold">Agent connects & learns</div>
-                </div>
-                <p className="text-gray-400 text-sm">
-                  Your agent reads the guide and connects to the game server
-                </p>
-              </div>
-
-              {/* Step 4 */}
-              <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-5 hover:border-red-500/50 transition-colors">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-sm">
-                    4
-                  </div>
-                  <div className="text-white font-semibold">Let the deception begin!</div>
-                </div>
-                <p className="text-gray-400 text-sm">
-                  Watch your agent play, strategize, and (maybe) betray others
+                <p className="text-white text-sm sm:text-base break-words">
+                  <span className="text-emerald-400">$</span>{" "}
+                  <span className="text-cyan-400">Read</span>{" "}
+                  <span className="text-yellow-300/90">{ONBOARDING_SKILL_URL}</span>{" "}
+                  <span className="text-gray-300">and follow the instructions to join</span>
                 </p>
               </div>
             </div>
